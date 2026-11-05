@@ -1,0 +1,48 @@
+{
+  "fileType": "Synthax1Preset",
+  "presetName": "Init",
+  "presetAuthor": "Synthax1 Factory",
+  "presetDescription": "Default native patch with one saw voice in Part A.",
+  "product": "Synthax1",
+  "productVersion": "0.1.0",
+  "tags": [
+    "Virtual Analog",
+    "Preview",
+    "Poly"
+  ],
+  "vendor": "BandPass Records",
+  "url": "https://bandpassrecords.com/",
+  "version": 1,
+  "bank": "Factory",
+  "category": "Init",
+  "preview": {
+    "type": "render_fixture",
+    "fixture": "fixtures/midi/overlap-pluck.mid",
+    "render_mode": "wet"
+  },
+  "preset": {
+    "schema_version": 2,
+    "plugin_min_version": "0.1.0",
+    "id": "init",
+    "display_name": "Init",
+    "author": "Synthax1 Factory",
+    "description": "Default native patch with one saw voice in Part A.",
+    "tags": [
+      "init"
+    ],
+    "parameters": {},
+    "mod_slots": [],
+    "macros": [],
+    "metadata": {
+      "program": "synthax1_lab_rebuild",
+      "browser": {
+        "bank": "Factory",
+        "category": "Init",
+        "source": "factory"
+      },
+      "implementation_note": "Synthax1-native remix authored from local Serum library category/name references; no Serum binary preset payload copied.",
+      "architecture": "native_parts",
+      "authoring_note": "Owned native factory patch. Four oscillator slots, independent part filters and envelopes, and classic source routes. Sound is authored for the rebuilt engine."
+    }
+  }
+}

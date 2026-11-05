@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Exercise native release rejection paths in disposable fixtures, never installed plugins."""
+from __future__ import annotations
+
+import importlib.util
+import plistlib
+import shutil
+import tempfile
+from pathlib import Path
+from collections.abc import Callable
+
+from release_support import ROOT, BUNDLES, artifact_directory, check_bundles, project_version, run
+
+
+def expect_failure(label: str, operation: Callable[[], object]) -> None:
+    try:
+        operation()
+    except (OSError, ValueError, RuntimeError):
+        print(f"PASS: rejects {label}")
+        return
+    raise RuntimeError(f"accepted invalid fixture: {label}")
+
+
+def main() -> None:
+    spec = importlib.util.spec_from_file_location("release_builder", ROOT / "scripts/build-release-bundles.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    with tempfile.TemporaryDirectory(prefix="synthax1-release-test-") as temporary:
+        directory = Path(temporary)
+        source = directory / "minimal.c"
+        source.write_text("int main(void) { return 0; }\n")
+        executable = directory / "universal"
+        run("xcrun", "clang", "-arch", "arm64", "-arch", "x86_64", "-mmacosx-version-min=11.0", source, "-o", executable)
+        artifacts = directory / "Synthax1Plugin_artefacts/Release"
+        version = project_version()
+        for fmt, name in BUNDLES.items():
+            bundle = artifacts / fmt / name
+            (bundle / "Contents/MacOS").mkdir(parents=True)
+            shutil.copy2(executable, bundle / "Contents/MacOS/Synthax1")
+            factory = bundle / "Contents/Resources/factory"
+            factory.parent.mkdir(parents=True)
+            shutil.copytree(ROOT / "presets/factory", factory)
+            metadata = {"CFBundleIdentifier": "com.bandpassrecords.synthax1", "CFBundleName": "Synthax1",
+                        "CFBundleExecutable": "Synthax1", "CFBundleShortVersionString": version,
+                        "CFBundleVersion": version, "CFBundlePackageType": "APPL" if fmt == "Standalone" else "BNDL"}
+            if fmt == "AU":
+                major, minor, patch = map(int, version.split("."))
+                metadata["AudioComponents"] = [{"manufacturer": "PkRx", "subtype": "SynA", "type": "aumu",
+                                                "version": (major << 16) | (minor << 8) | patch}]
+            (bundle / "Contents/Info.plist").write_bytes(plistlib.dumps(metadata))
+            run("codesign", "--force", "--sign", "-", "--timestamp=none", bundle)
+        check_bundles(artifacts)
+        print("PASS: universal ad-hoc signed native fixtures, metadata and all factory bytes")
+        installer = ROOT / "scripts/install-local-plugins.sh"
+        for fmt, name in BUNDLES.items():
+            run("codesign", "--remove-signature", artifacts / fmt / name)
+        preview = run(installer, directory, "Release", "--dry-run")
+        if "install preflight passed" not in preview or "ad-hoc sign installed copies" not in preview:
+            raise RuntimeError("unsigned developer install preflight did not reach the dry-run boundary")
+        print("PASS: unsigned raw build bundles pass developer install preflight without installation")
+        expect_failure("skip-signing with unsigned source plugins", lambda: run(
+            "env", "SYNTHAX1_SKIP_ADHOC_SIGN=1", installer, directory, "Release", "--dry-run"))
+        for fmt in ("AU", "VST3"):
+            run("codesign", "--force", "--sign", "-", artifacts / fmt / BUNDLES[fmt])
+        preview = run("env", "SYNTHAX1_SKIP_ADHOC_SIGN=1", installer, directory, "Release", "--dry-run")
+        if "preserve verified source signatures" not in preview:
+            raise RuntimeError("signed source plugin preservation preflight failed")
+        print("PASS: skip-signing verifies AU/VST3 while allowing an unsigned unused standalone")
+        damaged = artifacts / "AU/Synthax1.component/Contents/Resources/install-preflight-test.txt"
+        damaged.write_text("invalid signature fixture")
+        expect_failure("skip-signing with damaged source signature", lambda: run(
+            "env", "SYNTHAX1_SKIP_ADHOC_SIGN=1", installer, directory, "Release", "--dry-run"))
+        damaged.unlink()
+        for fmt, name in BUNDLES.items():
+            run("codesign", "--force", "--sign", "-", artifacts / fmt / name)
+        standalone = artifacts / "Standalone/Synthax1.app"
+        plist = standalone / "Contents/Info.plist"
+        original = plist.read_bytes()
+        changed = plistlib.loads(original)
+        changed["CFBundleIdentifier"] = "com.invalid.instrument"
+        plist.write_bytes(plistlib.dumps(changed))
+        expect_failure("wrong product identity", lambda: check_bundles(artifacts))
+        plist.write_bytes(original)
+        run("codesign", "--force", "--sign", "-", standalone)
+        preset = next((standalone / "Contents/Resources/factory").rglob("*.Synthax1Preset"))
+        original_preset = preset.read_bytes()
+        preset.write_bytes(original_preset + b"\n")
+        expect_failure("modified factory preset", lambda: check_bundles(artifacts))
+        preset.write_bytes(original_preset)
+        # A non-preset resource invalidates the code signature without changing factory expectations.
+        resource = standalone / "Contents/Resources/release-test.txt"
+        resource.write_text("fixture")
+        expect_failure("invalid sealed signature", lambda: check_bundles(artifacts))
+        resource.unlink()
+        main_binary = standalone / "Contents/MacOS/Synthax1"
+        run("xcrun", "clang", "-arch", "arm64", "-mmacosx-version-min=11.0", source, "-o", main_binary)
+        expect_failure("missing Intel slice", lambda: check_bundles(artifacts, "unsigned"))
+        run("xcrun", "clang", "-arch", "arm64", "-arch", "x86_64", "-mmacosx-version-min=12.0", source, "-o", main_binary)
+        expect_failure("raised minimum macOS", lambda: check_bundles(artifacts, "unsigned"))
+        expect_failure("fallback to a stale configuration", lambda: artifact_directory(directory, "RelWithDebInfo"))
+        shutil.copy2(executable, main_binary)
+        run("codesign", "--force", "--sign", "-", standalone)
+        expect_failure("ad-hoc signature presented as distribution", lambda: check_bundles(artifacts, "distribution", "ABCDEFGHIJ"))
+        import argparse
+        options = argparse.Namespace(jobs=1, build_dir=directory, juce_path=None, signing_mode="distribution",
+                                     config="Release", package=True, install_local=False, identity=None,
+                                     team_id=None, notary_profile=None)
+        expect_failure("missing distribution credentials", lambda: builder.preflight(options))
+        options.signing_mode = "developer"
+        (directory / "CMakeCache.txt").write_text("CMAKE_HOME_DIRECTORY:INTERNAL=/unrelated/checkout\n")
+        expect_failure("foreign-checkout CMake cache", lambda: builder.preflight(options))
+    print("Release tooling fixtures passed; no installed plugin or credential was accessed.")
+
+
+if __name__ == "__main__":
+    main()
