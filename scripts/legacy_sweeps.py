@@ -676,6 +676,65 @@ def lfooffset_set() -> list[Program]:
     return out
 
 
+def arpvel_set() -> list[Program]:
+    # What the Velocity source reads while the arpeggiator plays: Velocity into Mix AB at +1 on a sine, arp on (Up, gate 1),
+    # the ArpVelo knob, every step velocity x, and two played velocities.
+    sine = ref.wave("sine")
+    route = {"XModMisc1ASource": 1 / 11, "YModMisc1ADest1": 22 / 32, "XModMisc1ADest1Am": 1.0}
+    out = []
+    for note_velocity in (60, 127):
+        for arp_velo in (0.0, 0.25, 0.5, 0.75, 1.0):
+            for x in (0.3, 0.6, 1.0):
+                values = {"OscA1Wave": sine, "MixA": 0.5, "ArpGate": 1.0, "XSwArpOnOff": 1.0, "ArpMode": 0.0, "ArpVelo": arp_velo,
+                          **route, **{f"XArpVelo{i:02d}": x for i in range(1, 17)}}
+                out.append(Program(f"av n{note_velocity} v{arp_velo:.2f} x{x:.1f}", "mod", "", ["rms_db"], values,
+                                   [Note(57, 0.25, 3.5, note_velocity)], 4, {}))
+    return out
+
+
+def mixtwo_set() -> list[Program]:
+    # Two Velocity slots (Misc 1 A Dest 1 and 2) into Mix AB: how amounts to one destination add, and a third into Cutoff.
+    sine = ref.wave("sine")
+    out = []
+    for a1, a2 in ((0.5, 0.5), (1.0, 0.5), (0.75, 0.5), (0.5, 0.75), (1.0, 0.64), (0.75, 0.75), (1.0, 1.0), (0.25, 0.25), (1.0, 0.0), (0.6, 0.6)):
+        values = {"OscA1Wave": sine, "MixA": 0.5, "XModMisc1ASource": 1 / 11, "YModMisc1ADest1": 22 / 32, "YModMisc1ADest2": 22 / 32,
+                  "XModMisc1ADest1Am": a1, "XModMisc1ADest2Am": a2}
+        out.append(Program(f"mix2 {a1:.2f} {a2:.2f}", "mod", "", ["rms_db"], values, [Note(57, 0.25, 3.5, 100)], 4, {}))
+    return out
+
+
+def phstatic2_set() -> list[Program]:
+    # Phaser response as (phaser on) / (phaser off) of the same noise, LFO gain 0, each program twice to see whether
+    # the response repeats. Centre 0.3/0.5/0.7, feedback 0/0.5/1, mix 0.5.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwPhaserOnOff": 1.0, "PhaserDry_Wet": 0.5, "PhaserLFOGain": 0.0,
+            "PhaserSpread": 0.5, "PhaserLROffset": 0.5, "PhaserWidth": 1.0, "PhaserFeedback": 0.5, "PhaserCenterFreq": 0.5}
+    notes = [Note(57, 0.25, 3.5, 100)]
+    out = []
+    for i in range(2):
+        out.append(Program(f"ph off {i}", "phaser", "", ["curve"], {**base, "XSwPhaserOnOff": 0.0}, notes, 8, {}))
+    for center in (0.3, 0.5, 0.7):
+        for fb in (0.0, 0.5, 1.0):
+            for rep in range(2):
+                out.append(Program(f"ph c{center:.1f} f{fb:.1f} {rep}", "phaser", "", ["curve"],
+                                   {**base, "PhaserCenterFreq": center, "PhaserFeedback": fb}, notes, 8, {}))
+    return out
+
+
+def phstatic3_set() -> list[Program]:
+    # As phstatic2 (response = phaser on / off, LFO gain 0) for Spread, LR Offset, Width, Mix and the centre knob in fine steps.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwPhaserOnOff": 1.0, "PhaserDry_Wet": 0.5, "PhaserLFOGain": 0.0,
+            "PhaserSpread": 0.5, "PhaserLROffset": 0.5, "PhaserWidth": 1.0, "PhaserFeedback": 0.0, "PhaserCenterFreq": 0.5}
+    notes = [Note(57, 0.25, 3.5, 100)]
+    out = [Program("ph off 0", "phaser", "", ["curve"], {**base, "XSwPhaserOnOff": 0.0}, notes, 8, {}),
+           Program("ph off 1", "phaser", "", ["curve"], {**base, "XSwPhaserOnOff": 0.0}, notes, 8, {})]
+    for kind, field, values in (("spread", "PhaserSpread", (0.0, 0.25, 0.75, 1.0)), ("lr", "PhaserLROffset", (0.0, 0.25, 0.75, 1.0)),
+                                ("width", "PhaserWidth", (0.0, 0.5)), ("mix", "PhaserDry_Wet", (0.25, 0.75, 1.0)),
+                                ("center", "PhaserCenterFreq", (0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 0.9, 1.0))):
+        for v in values:
+            out.append(Program(f"ph {kind} {v:.2f}", "phaser", "", ["curve"], {**base, field: v}, notes, 8, {}))
+    return out
+
+
 def filtermodes_set() -> list[Program]:
     # Noise through every filter mode, slope, resonance and drive at two cutoffs; compared as spectra
     # (parity_compare.py groups by the second field, here the mode).
@@ -889,7 +948,7 @@ def stepwho_set() -> list[Program]:
     return out
 
 
-SETS = {"lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"phstatic3": phstatic3_set, "phstatic2": phstatic2_set, "mixtwo": mixtwo_set, "arpvel": arpvel_set, "lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:
