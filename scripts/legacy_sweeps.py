@@ -519,6 +519,120 @@ def reverbdamp_set() -> list[Program]:
                     {"kind": "damp", "value": v}) for v in (0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.065, 0.08, 0.1, 0.13, 0.17, 0.25, 0.4, 0.6, 0.8)]
 
 
+def resosweep_set() -> list[Program]:
+    # Resonance 0..1 in steps of 0.1 at three cutoffs: noise through LP24 and LP12 (linear response),
+    # a saw at A1 through LP24 (shows nonlinear behaviour), and self-oscillation with no input.
+    out = []
+    reso_steps = [i / 10 for i in range(11)]
+    for src, label, slope, sl, pitch in ((ref.wave("noise"), "n", 0.0, "24", 57), (ref.wave("noise"), "n", 1.0, "12", 57),
+                                         (ref.wave("saw"), "s", 0.0, "24", 45)):
+        for cutoff in (0.4, 0.5, 0.6):
+            for reso in reso_steps:
+                values = {"OscA1Wave": src, "FilterAType": 1 / 3, "FilterADB": slope, "FilterAReso": reso,
+                          "FilterADrive": 0.0, "FilterACutoff": cutoff}
+                out.append(Program(f"{label}{sl} c{cutoff:.1f} r{reso:.1f}", f"{label}{sl}", "", ["spectrum"],
+                                   values, [Note(pitch, 0.25, 3.0, 100)], 4, {}))
+    for cutoff in (0.3, 0.5, 0.7):
+        for reso in (0.9, 0.95, 1.0):
+            values = {"OscA1Wave": ref.wave("noise"), "OscA1Volume": 0.0, "FilterAType": 1 / 3, "FilterADB": 0.0,
+                      "FilterAReso": reso, "FilterADrive": 0.0, "FilterACutoff": cutoff}
+            out.append(Program(f"self c{cutoff:.1f} r{reso:.2f}", "self", "", ["spectrum"],
+                               values, [Note(57, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
+def resomodes_set() -> list[Program]:
+    # Resonance 0..1 on bandpass and highpass, 24 and 12 dB, two cutoffs (noise in; see resosweep for lowpass).
+    out = []
+    for mode, label in ((2 / 3, "bp"), (1.0, "hp")):
+        for slope, sl in ((0.0, "24"), (1.0, "12")):
+            for cutoff in (0.4, 0.5):
+                for reso in [i / 10 for i in range(11)]:
+                    values = {"OscA1Wave": ref.wave("noise"), "FilterAType": mode, "FilterADB": slope, "FilterAReso": reso,
+                              "FilterADrive": 0.0, "FilterACutoff": cutoff}
+                    out.append(Program(f"{label}{sl} c{cutoff:.1f} r{reso:.1f}", f"{label}{sl}", "", ["spectrum"],
+                                       values, [Note(57, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
+def resoctl_set() -> list[Program]:
+    # How the Filter Control resonance adds to the part's, and how drive interacts with resonance (LP24, noise, cutoff 0.5).
+    out = []
+    base = {"OscA1Wave": ref.wave("noise"), "FilterAType": 1 / 3, "FilterADB": 0.0, "FilterACutoff": 0.5}
+    for part in (0.0, 0.3, 0.6):
+        for ctl in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
+            out.append(Program(f"ctl p{part:.1f} c{ctl:.1f}", "ctl", "", ["spectrum"],
+                               {**base, "FilterAReso": part, "FilterCtlReso": ctl}, [Note(57, 0.25, 3.0, 100)], 4, {}))
+    for volume in (1.0, 0.3):
+        for reso in (0.3, 0.6, 0.9):
+            for drive in (0.0, 0.25, 0.5, 0.75, 1.0):
+                out.append(Program(f"drv v{volume:.1f} r{reso:.1f} d{drive:.2f}", "drv", "", ["spectrum"],
+                                   {**base, "OscA1Volume": volume, "FilterAReso": reso, "FilterADrive": drive},
+                                   [Note(57, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
+def cutenv_set() -> list[Program]:
+    # Cutoff swept by Mod Env 1 over time (noise, LP24, resonance 0.8): decay, attack and release knobs at two amounts.
+    # The resonance peak tracked over time gives the envelope's shape; compare with cutenv_track.py-style analysis.
+    base = {"OscA1Wave": NOISE, "FilterAType": 1 / 3, "FilterADB": 0.0, "FilterAReso": 0.8, "FilterACutoff": 0.3,
+            "FilterCtlCutoff": ref.NEUTRAL_FILTER_CONTROL, "YModEnv1Dest1": ref.DEST_CUTOFF_A,
+            "ModEnv1Attack": 0.0, "ModEnv1Decay": 0.5, "ModEnv1Sustain": 0.0, "ModEnv1Release": 0.2,
+            "AmpEnvARelease": 0.5}
+    out = []
+    long_note = [Note(57, 0.25, 7.0, 100)]
+    for amount in (0.75, 1.0):
+        for decay in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7):
+            out.append(Program(f"dec {decay:.1f} a{amount:.2f}", "dec", "", ["spectrum"],
+                               {**base, "ModEnv1Decay": decay, "XModEnv1Dest1Am": amount}, long_note, 8, {}))
+    for attack in (0.2, 0.3, 0.4, 0.5, 0.6):
+        out.append(Program(f"att {attack:.1f}", "att", "", ["spectrum"],
+                           {**base, "ModEnv1Attack": attack, "ModEnv1Decay": 1.0, "ModEnv1Sustain": 1.0,
+                            "XModEnv1Dest1Am": 0.8, "FilterACutoff": 0.2}, long_note, 8, {}))
+    for release in (0.2, 0.3, 0.4, 0.5, 0.6):
+        out.append(Program(f"rel {release:.1f}", "rel", "", ["spectrum"],
+                           {**base, "ModEnv1Decay": 1.0, "ModEnv1Sustain": 1.0, "ModEnv1Release": release,
+                            "XModEnv1Dest1Am": 0.8, "FilterACutoff": 0.2, "AmpEnvARelease": 0.9},
+                           [Note(57, 0.25, 3.0, 100)], 8, {}))
+    return out
+
+
+def envshape_set() -> list[Program]:
+    # Mod Env 1 on the pitch of a sine (full amount): the sine's pitch over time is the envelope's shape.
+    base = {"OscA1Wave": ref.wave("sine"), "YModEnv1Dest1": ref.DEST_PITCH_A, "XModEnv1Dest1Am": 1.0,
+            "ModEnv1Attack": 0.0, "ModEnv1Decay": 0.5, "ModEnv1Sustain": 0.0, "ModEnv1Release": 0.2,
+            "AmpEnvARelease": 0.5}
+    out = []
+    long_note = [Note(57, 0.25, 15.0, 100)]
+    for decay in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+        out.append(Program(f"dec {decay:.1f} s0.0", "dec", "", ["pitch"], {**base, "ModEnv1Decay": decay}, long_note, 16, {}))
+    for decay in (0.3, 0.5, 0.7):
+        out.append(Program(f"dec {decay:.1f} s0.5", "dec", "", ["pitch"],
+                           {**base, "ModEnv1Decay": decay, "ModEnv1Sustain": 0.5}, long_note, 16, {}))
+    for attack in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8):
+        out.append(Program(f"att {attack:.1f}", "att", "", ["pitch"],
+                           {**base, "ModEnv1Attack": attack, "ModEnv1Decay": 1.0, "ModEnv1Sustain": 1.0}, long_note, 16, {}))
+    for release in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8):
+        out.append(Program(f"rel {release:.1f}", "rel", "", ["pitch"],
+                           {**base, "ModEnv1Decay": 1.0, "ModEnv1Sustain": 1.0, "ModEnv1Release": release, "AmpEnvARelease": 0.95},
+                           [Note(57, 0.25, 3.0, 100)], 16, {}))
+    return out
+
+
+def sustain_set() -> list[Program]:
+    # Amp envelope sustain knob against steady level (sine, fast decay), and the same on Mod Env 1 -> pitch.
+    out = []
+    sine = ref.wave("sine")
+    for v in [i / 10 for i in range(11)]:
+        out.append(Program(f"amp sustain {v:.1f}", "amp", "", ["rms_db"],
+                           {"OscA1Wave": sine, "AmpEnvADecay": 0.3, "AmpEnvASustain": v}, [Note(57, 0.25, 7.0, 100)], 8, {}))
+    for v in [i / 10 for i in range(11)]:
+        out.append(Program(f"mod sustain {v:.1f}", "mod", "", ["pitch"],
+                           {"OscA1Wave": sine, "YModEnv1Dest1": ref.DEST_PITCH_A, "XModEnv1Dest1Am": 0.55, "ModEnv1Attack": 0.0,
+                            "ModEnv1Decay": 0.3, "ModEnv1Sustain": v}, [Note(57, 0.25, 7.0, 100)], 8, {}))
+    return out
+
+
 def filtermodes_set() -> list[Program]:
     # Noise through every filter mode, slope, resonance and drive at two cutoffs; compared as spectra
     # (parity_compare.py groups by the second field, here the mode).
@@ -732,7 +846,7 @@ def stepwho_set() -> list[Program]:
     return out
 
 
-SETS = {"stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

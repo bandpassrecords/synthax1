@@ -497,7 +497,7 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
             pitchLane[sample] = pitch;
             cutoffLane[sample] = cutoff;
             for (std::size_t part = 0; part < ampLane.size(); ++part)
-                ampLane[part][sample] = ampValues[part];
+                ampLane[part][sample] = ampValues[part] * ampValues[part]; // volume is the envelope squared
             transModLevelDbLane[sample] = lastTransModSums.ampLevelDb;
             transModPanLane[sample] = lastTransModSums.pan;
             for (int entry = 0; entry < plan.liveCount; ++entry)
@@ -612,7 +612,7 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
             cutoffLane[sample] = (note - 60.0f) * parameters.direct.filterKeytrack
                 + blend(controlFrom.cutoff, controlTo.cutoff);
             for (std::size_t part = 0; part < ampLane.size(); ++part)
-                ampLane[part][sample] = ampValues[part];
+                ampLane[part][sample] = ampValues[part] * ampValues[part]; // volume is the envelope squared
             transModLevelDbLane[sample] = blend(controlFrom.levelDb, controlTo.levelDb);
             transModPanLane[sample] = blend(controlFrom.pan, controlTo.pan);
             for (int entry = 0; entry < plan.liveCount; ++entry)

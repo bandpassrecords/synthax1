@@ -29,7 +29,17 @@ bool testEnvelope()
     for (int i = 0; i < 14; ++i)
         env.process();
 
-    return !env.isActive() && env.getValue() == 0.0f;
+    if (env.isActive() || env.getValue() != 0.0f)
+        return false;
+
+    // Decay aims past the sustain level and arrives in finite time (1.33 x the 40 dB time, sustain-independent).
+    synth::Envelope decay;
+    decay.prepare(1000.0);
+    decay.setSettings({ 1.0f, 10.0f, 0.5f, 10.0f });
+    decay.noteOn();
+    for (int i = 0; i < 20; ++i)
+        decay.process();
+    return decay.getStage() == synth::EnvelopeStage::Sustain && decay.getValue() == 0.5f;
 }
 
 bool testLfoReset()

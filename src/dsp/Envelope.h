@@ -11,9 +11,9 @@ enum class EnvelopeStage
     Release
 };
 
-// Times follow the reference synth's definitions (measured): attack = time to full level along an
-// S-shaped curve; decay and release = time to fall 40 dB along a fixed curve that ends near
-// -90 dB at 1.31 x that time.
+// The value is the envelope as the reference synth computes it; a part's volume is its square (see Envelope.cpp).
+// Times follow the reference synth's definitions (measured): attack = time until the squared value reaches 0.99;
+// decay and release = time until the squared value has fallen 40 dB, the stage ending at 1.33 x that time.
 struct EnvelopeSettings
 {
     float attackMs = 2.0f;
@@ -44,10 +44,10 @@ private:
     EnvelopeSettings settings;
     EnvelopeStage stage = EnvelopeStage::Idle;
     float value = 0.0f;
-    float releaseStart = 0.0f;
-    float stageElapsed = 0.0f;  // samples into the current stage
-    float attackSamples = 1.0f; // attack time: reaches full level
-    float decaySamples = 1.0f;  // decay time: reaches -40 dB of the way to sustain
-    float releaseSamples = 1.0f; // release time: reaches -40 dB
+    // Per-sample factors of the three exponential stages (see Envelope.cpp).
+    float attackStep = 0.0f;
+    float decayStep = 0.0f;
+    float releaseStep = 0.0f;
+    static constexpr float attackTarget = 1.1545f; // 1 + overshoot
 };
 } // namespace synth

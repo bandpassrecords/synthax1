@@ -376,6 +376,12 @@ float sharedOffsetSemitones(const Builder& b) noexcept
     return low <= high ? std::clamp(ideal, low, high) : ideal;
 }
 
+// MEASURED (the reference synth 3.0.7.3, sweeps/resosweep, noise through LP24 and LP12 at two cutoffs): the
+// reference synth's resonance peak is much lower than Synthax1's at the same knob: peak over passband at knob 1.0
+// is 16 dB (LP24) and 22 dB (LP12) against 31 and 37 dB here, and 14 against 24 dB at 0.9. Matching
+// the peak height at each knob position gives an effective resonance of 0.8 x the knob (0.43 at 0.5, 0.79 at 1).
+constexpr float legacyResonanceScale = 0.8f;
+
 void mapPartFilter(Builder& b, int part, F cutoff, F drive, F input, F reso, F type, F slope, float offset)
 {
     const auto prefix = "layer." + std::to_string(part) + ".filter.";
@@ -394,7 +400,7 @@ void mapPartFilter(Builder& b, int part, F cutoff, F drive, F input, F reso, F t
     const auto audibleRange = target > 16.0f && target < 135.0f;
     if (filterType != 0 && audibleRange && std::abs(partSemitones + offset - target) > 0.5f)
         b.approximated(std::string("Filter ") + (part == 1 ? "A" : "B") + " cutoff is outside Synthax1's range and was clamped");
-    b.set(prefix + "resonance", b.raw(reso));
+    b.set(prefix + "resonance", b.raw(reso) * legacyResonanceScale);
     b.set(prefix + "drive", b.raw(drive));
 
     // Stored: own part, own+other, none. Synthax1 choices: None, A, B, A+B.
@@ -409,7 +415,7 @@ void mapFilters(Builder& b)
     mapPartFilter(b, 1, F::FilterACutoff, F::FilterADrive, F::FilterAInput, F::FilterAReso, F::FilterAType, F::FilterADB, offset);
     mapPartFilter(b, 2, F::FilterBCutoff, F::FilterBDrive, F::FilterBInput, F::FilterBReso, F::FilterBType, F::FilterBDB, offset);
     b.set("filter_control.cutoff_semitones", offset);
-    b.set("filter_control.resonance", b.raw(F::FilterCtlReso));
+    b.set("filter_control.resonance", b.raw(F::FilterCtlReso) * legacyResonanceScale);
     b.set("filter_control.keytrack", b.raw(F::FilterCtlKeyTrk));
     b.flag("filter_control.warm_drive", b.on(F::FilterCtlWarmDrive));
 }
