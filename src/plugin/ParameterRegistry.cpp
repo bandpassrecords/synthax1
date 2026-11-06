@@ -409,8 +409,8 @@ std::vector<ParameterSpec> buildSpecs()
     specs.push_back(floatParam("fx.delay_time_right_ms", "Delay Time Right Ms", "fx", "milliseconds", 1.0f, 6000.0f, 250.0f));
     specs.push_back(floatParam("fx.delay_spread", "Delay Spread", "fx", "normalized", 0.0f, 1.0f, 1.0f));
     specs.push_back(floatParam("fx.delay_width", "Delay Width", "fx", "normalized", 0.0f, 1.0f, 1.0f));
-    specs.push_back(floatParam("fx.delay_low_cut_hz", "Delay Low Cut Hz", "fx", "Hz", 20.0f, 2000.0f, 20.0f));
-    specs.push_back(floatParam("fx.delay_high_cut_hz", "Delay High Cut Hz", "fx", "Hz", 200.0f, 20000.0f, 20000.0f));
+    specs.push_back(floatParam("fx.delay_low_cut_hz", "Delay Low Cut Hz", "fx", "Hz", 20.0f, 12000.0f, 20.0f));
+    specs.push_back(floatParam("fx.delay_high_cut_hz", "Delay High Cut Hz", "fx", "Hz", 80.0f, 20000.0f, 20000.0f));
     specs.push_back(floatParam("fx.delay_smear", "Delay Smear", "fx", "normalized", 0.0f, 1.0f, 0.0f));
     specs.push_back(floatParam("fx.reverb_pre_delay_ms", "Reverb Pre Delay Ms", "fx", "milliseconds", 0.0f, 500.0f, 0.0f));
     specs.push_back(floatParam("fx.reverb_damp", "Reverb Damp", "fx", "normalized", 0.0f, 1.0f, 0.48f));

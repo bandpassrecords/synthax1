@@ -198,7 +198,7 @@ void testMeasuredCurves()
     // 1100 Hz nominal, minus the measured 1.79 semitone offset of the reference synth's resonance peak.
     check(near(combined, semitones(1100.0f) - 1.79f, 0.3f), "part + control cutoff reproduce 1100 Hz (with measured offset)");
 
-    check(valueOf(mapped, "fx.delay_high_cut_hz") == 200.0f, "delay high cut at 1.0 is its lowest value");
+    check(std::abs(valueOf(mapped, "fx.delay_high_cut_hz") - 82.0f) < 1.0f, "delay high cut at 1.0 is its lowest value");
     check(near(valueOf(mapped, "fx.compressor_ratio"), 1.98f, 0.03f), "compressor ratio from the measured table");
     check(near(valueOf(mapped, "fx.compressor_makeup_db"), 1.3f, 0.05f), "compressor makeup depends on Ratio and Threshold (0.5, 0.5 -> 1.3 dB)");
     check(near(valueOf(mapped, "fx.chorus_feedback"), 0.96f * std::pow(0.5f, 1.8f), 0.001f), "chorus feedback curve");

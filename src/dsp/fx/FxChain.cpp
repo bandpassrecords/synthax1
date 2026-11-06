@@ -874,8 +874,8 @@ FxStereoFrame FxChain::processDelay(FxStereoFrame input, const SynthParameters& 
     auto delayed = FxStereoFrame {
         delayLeft.readInterpolated(smoothedDelayLeft), delayRight.readInterpolated(smoothedDelayRight)
     };
-    const auto lowCut = std::clamp(finiteOrZero(fx.delayLowCutHz), 20.0f, 2000.0f);
-    const auto highCut = std::clamp(finiteOrZero(fx.delayHighCutHz), 200.0f, 20000.0f);
+    const auto lowCut = std::clamp(finiteOrZero(fx.delayLowCutHz), 20.0f, 12000.0f);
+    const auto highCut = std::clamp(finiteOrZero(fx.delayHighCutHz), 80.0f, 20000.0f);
     if (lowCut != cachedDelayLowCut)
     {
         cachedDelayLowCut = lowCut;
@@ -897,23 +897,35 @@ FxStereoFrame FxChain::processDelay(FxStereoFrame input, const SynthParameters& 
             high += delayHighCoefficient * (value - high);
             value = high;
         }
-        const auto smear = clampUnit(finiteOrZero(fx.delaySmear)) * 0.7f;
-        if (smear > 0.0f)
-        {
-            const auto previous = diffuser.readAtWriteHead();
-            const auto output = previous - value * smear;
-            diffuser.write(value + output * smear);
-            value = output;
-        }
+        // MEASURED (sweeps/delayflt, delay2): Smear takes a flat 1.5 to 2 dB off a noise echo path (full at about 0.4) and
+        // leaves the spectrum alone, so each pass round the feedback loop loses about 1 dB more. The old allpass
+        // diffuser added spurious echoes and stretched the tail. (The diffuser buffers stay allocated, unused.)
+        (void) diffuser;
+        value *= 1.0f - 0.06f * std::min(1.0f, clampUnit(finiteOrZero(fx.delaySmear)) * 2.5f);
         return finiteOrZero(value);
     };
     delayed.left = filter(delayed.left, delayLowState.left, delayHighState.left, delayDiffusers[0]);
     delayed.right = filter(delayed.right, delayLowState.right, delayHighState.right, delayDiffusers[1]);
     const auto feedback = std::clamp(finiteOrZero(fx.delayFeedback), 0.0f, 0.975f);
-    const auto spread = clampUnit(finiteOrZero(fx.delaySpread));
-    const auto cross = fx.delayPingPong ? spread : 0.0f;
-    delayLeft.write(input.left + (delayed.left * (1.0f - cross) + delayed.right * cross) * feedback);
-    delayRight.write(input.right + (delayed.right * (1.0f - cross) + delayed.left * cross) * feedback);
+    if (fx.delayPingPong)
+    {
+        // MEASURED (sweeps/delay2, delaypan): with Ping-Pong on the feedback always crosses (left line into right and back).
+        // Spread only decides where the input goes: the left line takes 0.5 e^(0.8 s) of the left input and 0.5 s of the
+        // right one, the right line 0.5 (1 - s) of the right input and none of the left. Spread 0 therefore feeds each
+        // line with half its own channel, and Spread 1 feeds the left line alone.
+        const auto spread = clampUnit(finiteOrZero(fx.delaySpread));
+        delayLeft.write(input.left * (0.5f * std::exp(0.806f * spread)) + input.right * (0.5f * spread) + delayed.right * feedback);
+        delayRight.write(input.right * (0.5f * (1.0f - spread)) + delayed.left * feedback);
+    }
+    else
+    {
+        delayLeft.write(input.left + delayed.left * feedback);
+        delayRight.write(input.right + delayed.right * feedback);
+    }
+    // The first echo falls further than the later passes (-3 dB against 0.5 dB more per pass), hence a separate output loss.
+    const auto smearOutput = 1.0f - 0.12f * std::min(1.0f, clampUnit(finiteOrZero(fx.delaySmear)) * 2.5f);
+    delayed.left *= smearOutput;
+    delayed.right *= smearOutput;
     delayed = applyWidth(delayed, fx.delayWidth);
     // MEASURED (sweeps/delay): like the reverb, the dry signal follows a quarter cosine and the wet gain the reverb's curve.
     const auto amount = clampUnit(finiteOrZero(mixStates[3]));

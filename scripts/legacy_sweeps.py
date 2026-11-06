@@ -735,6 +735,100 @@ def phstatic3_set() -> list[Program]:
     return out
 
 
+def delay2_set() -> list[Program]:
+    # A 20 ms noise burst through the delay alone (sync off, full wet, feedback 0.6, left and right times different):
+    # echo levels per channel against Ping-Pong, Spread, Smear, High Cut, Low Cut and Width.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 0.0, "DelayDry_Wet": 1.0,
+            "DelayTimeLeft": 0.55, "DelayTimeRight": 0.65, "DelayFeedback": 0.6, "DelayPingPong": 0.0,
+            "DelaySmear": 0.0, "DelaySpread": 0.5, "DelayWidth": 1.0, "DelayLowCut": 0.0, "DelayHighCut": 0.0,
+            "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    out = []
+
+    def add(kind, value, **changes):
+        out.append(Program(f"d2 {kind} {value:.2f}", "delay", "", ["echoes"], {**base, **changes},
+                           [Note(57, 0.25, 0.04, 100)], 16, {"kind": kind, "value": value}))
+    add("base", 0.0)
+    for v in (0.0, 0.5, 1.0):
+        add("pp-spread", v, DelayPingPong=1.0, DelaySpread=v)
+    for v in (0.25, 0.5, 0.75, 1.0):
+        add("smear", v, DelaySmear=v)
+    for v in (0.2, 0.4, 0.6, 0.8, 1.0):
+        add("highcut", v, DelayHighCut=v)
+    for v in (0.2, 0.4, 0.6, 0.8, 1.0):
+        add("lowcut", v, DelayLowCut=v)
+    for v in (0.0, 0.5):
+        add("width", v, DelayWidth=v)
+    for v in (0.0, 0.5, 1.0):
+        add("spread-nopp", v, DelaySpread=v)
+    return out
+
+
+def delayflt_set() -> list[Program]:
+    # Sustained noise through the delay alone (full wet, no feedback): Low Cut and High Cut 0..1, the response of the
+    # echo path is wet spectrum / the spectrum with both at 0.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 0.0, "DelayDry_Wet": 1.0, "DelayTimeLeft": 0.5,
+            "DelayTimeRight": 0.5, "DelayFeedback": 0.0, "DelayPingPong": 0.0, "DelaySmear": 0.0, "DelayWidth": 1.0,
+            "DelayLowCut": 0.0, "DelayHighCut": 0.0}
+    notes = [Note(57, 0.25, 3.0, 100)]
+    out = [Program("dflt base 0", "delay", "", ["curve"], base, notes, 4, {}),
+           Program("dflt base 1", "delay", "", ["curve"], base, notes, 4, {})]
+    for kind, field in (("low", "DelayLowCut"), ("high", "DelayHighCut"), ("smear", "DelaySmear")):
+        for v in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
+            out.append(Program(f"dflt {kind} {v:.1f}", "delay", "", ["curve"], {**base, field: v}, notes, 4, {}))
+    return out
+
+
+def delaysync_set() -> list[Program]:
+    # Sync on: echo time of a 20 ms noise burst against the Left and Right time knobs (both channels read at once).
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 1.0, "DelayDry_Wet": 1.0, "DelayFeedback": 0.0,
+            "DelayPingPong": 0.0, "DelaySmear": 0.0, "DelayWidth": 1.0, "DelayLowCut": 0.0, "DelayHighCut": 0.0,
+            "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    out = []
+    for i in range(0, 21):
+        v = i / 20
+        out.append(Program(f"dsync {v:.2f}", "delay", "", ["echoes"], {**base, "DelayTimeLeft": v, "DelayTimeRight": 1.0 - v},
+                           [Note(57, 0.25, 0.04, 100)], 12, {}))
+    return out
+
+
+def delaycombo_set() -> list[Program]:
+    # The delay settings of a real preset ("stab it") applied to a noise burst, then one setting at a time put back to its init value.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 1.0, "DelayDry_Wet": 0.45, "DelayFeedback": 0.54,
+            "DelayPingPong": 1.0, "DelaySmear": 0.257, "DelaySpread": 0.932, "DelayWidth": 1.0, "DelayLowCut": 0.0, "DelayHighCut": 0.437,
+            "DelayTimeLeft": 0.787, "DelayTimeRight": 0.775,
+            "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    notes = [Note(57, 0.25, 0.04, 100)]
+    out = [Program("dc full", "delay", "", ["echoes"], base, notes, 16, {})]
+    for label, changes in (("nosmear", {"DelaySmear": 0.0}), ("nopp", {"DelayPingPong": 0.0}), ("nohigh", {"DelayHighCut": 0.0}),
+                           ("mix1", {"DelayDry_Wet": 1.0}), ("fb0.54->0.3", {"DelayFeedback": 0.3}), ("nosync", {"Sync": 0.0, "DelayTimeLeft": 0.8, "DelayTimeRight": 0.8}),
+                           ("spread0.5", {"DelaySpread": 0.5}), ("width0.5", {"DelayWidth": 0.5})):
+        out.append(Program(f"dc {label}", "delay", "", ["echoes"], {**base, **changes}, notes, 16, {}))
+    return out
+
+
+def delaypan_set() -> list[Program]:
+    # Ping-Pong with a one-sided input (oscillator panned hard left or right) and with a centred one: where the input goes.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 0.0, "DelayDry_Wet": 1.0,
+            "DelayTimeLeft": 0.55, "DelayTimeRight": 0.65, "DelayFeedback": 0.6, "DelayPingPong": 1.0,
+            "DelaySmear": 0.0, "DelayWidth": 1.0, "DelayLowCut": 0.0, "DelayHighCut": 0.0,
+            "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    out = []
+    for pan, label in ((0.0, "left"), (1.0, "right"), (0.5, "mid")):
+        for spread in (0.0, 0.5, 1.0):
+            out.append(Program(f"dp {label} s{spread:.1f}", "delay", "", ["echoes"], {**base, "OscA1Pan": pan, "DelaySpread": spread},
+                               [Note(57, 0.25, 0.04, 100)], 12, {}))
+    return out
+
+
+def panlaw_set() -> list[Program]:
+    # Left and right level of a sine against the oscillator Pan knob, and against the part's Mix/pan.
+    out = []
+    for pan in (0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0):
+        out.append(Program(f"pan {pan:.3f}", "pan", "", ["rms_db"], {"OscA1Wave": ref.wave("sine"), "OscA1Pan": pan},
+                           [Note(57, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
 def filtermodes_set() -> list[Program]:
     # Noise through every filter mode, slope, resonance and drive at two cutoffs; compared as spectra
     # (parity_compare.py groups by the second field, here the mode).
@@ -948,7 +1042,7 @@ def stepwho_set() -> list[Program]:
     return out
 
 
-SETS = {"phstatic3": phstatic3_set, "phstatic2": phstatic2_set, "mixtwo": mixtwo_set, "arpvel": arpvel_set, "lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"panlaw": panlaw_set, "delaypan": delaypan_set, "delaycombo": delaycombo_set, "delaysync": delaysync_set, "delayflt": delayflt_set, "delay2": delay2_set, "phstatic3": phstatic3_set, "phstatic2": phstatic2_set, "mixtwo": mixtwo_set, "arpvel": arpvel_set, "lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

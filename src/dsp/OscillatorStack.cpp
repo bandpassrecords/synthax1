@@ -208,9 +208,11 @@ void OscillatorStack::updateNativePan(int count, float pan, float spread) noexce
                                             : (outside & 1) == 0)
                                 == (index <= mirrored);
         const auto voicePan = index == mirrored ? 0.0f : (onLeft ? -spread : spread);
-        const auto angle = (clampFast(pan, -1.0f, 1.0f) + 1.0f) * pi * 0.25f;
-        const auto baseLeft = pan >= 1.0f ? 0.0f : std::cos(angle);
-        const auto baseRight = pan <= -1.0f ? 0.0f : std::sin(angle);
+        // MEASURED (sweeps/panlaw): the oscillator Pan knob is linear too, a hard pan sitting 6 dB above the centre
+        // (a constant-power law gives 3 dB).
+        const auto clampedPan = clampFast(pan, -1.0f, 1.0f);
+        const auto baseLeft = 0.70710678f * (1.0f - clampedPan);
+        const auto baseRight = 0.70710678f * (1.0f + clampedPan);
         nativePanLeft[static_cast<std::size_t>(index)] = baseLeft * (1.0f - voicePan);
         nativePanRight[static_cast<std::size_t>(index)] = baseRight * (1.0f + voicePan);
     }

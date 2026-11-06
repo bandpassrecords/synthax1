@@ -59,7 +59,20 @@ float combinedFilterHz(float part, float control) noexcept
 }
 
 float lfoHz(float n) noexcept { return 0.0417f * std::exp(8.4352f * clamp01(n)); }       // MEASURED, free-running
-float delayLowCutHz(float n) noexcept { return 3.2328f * std::exp(9.0109f * clamp01(n)); } // MEASURED
+// MEASURED (sweeps/delayflt, noise through the delay with no feedback): a one-pole highpass whose corner follows 3.2 e^(9.0 n) up
+// to about 0.5 and then flattens: 215 Hz at 0.5, 1.1 kHz at 0.7 and 8.5 kHz at 1.0 (log-linear between the points).
+float delayLowCutHz(float n) noexcept
+{
+    constexpr std::array<std::array<float, 2>, 5> points { { { 0.0f, 3.2f }, { 0.3f, 48.0f }, { 0.5f, 215.0f }, { 0.7f, 1100.0f }, { 1.0f, 8500.0f } } };
+    const auto x = clamp01(n);
+    for (std::size_t i = 1; i < points.size(); ++i)
+        if (x <= points[i][0])
+        {
+            const auto t = (x - points[i - 1][0]) / (points[i][0] - points[i - 1][0]);
+            return std::exp(std::log(points[i - 1][1]) + (std::log(points[i][1]) - std::log(points[i - 1][1])) * t);
+        }
+    return points.back()[1];
+}
 float delayTimeMs(float n) noexcept { return 1000.0f * std::exp(3.49f * (clamp01(n) - 1.0f)); } // MEASURED, Sync off; below 0.05 extrapolated
 float delayHighCutHz(float n) noexcept { return 21120.0f * std::exp(-5.545f * clamp01(n)); } // MEASURED, falls as n rises
 float eqBassHz(float n) noexcept { return 13.75f * std::exp(4.1589f * clamp01(n)); }      // MEASURED
@@ -640,8 +653,8 @@ void mapEffects(Builder& b, bool synced)
     b.set("fx.delay_spread", b.raw(F::DelaySpread));
     b.set("fx.delay_width", b.raw(F::DelayWidth));
     // Clamping only removes inaudible extremes (below 20 Hz / above 20 kHz) or rarely used ones.
-    b.set("fx.delay_low_cut_hz", std::clamp(curves::delayLowCutHz(b.raw(F::DelayLowCut)), 20.0f, 2000.0f));
-    b.set("fx.delay_high_cut_hz", std::clamp(curves::delayHighCutHz(b.raw(F::DelayHighCut)), 200.0f, 20000.0f));
+    b.set("fx.delay_low_cut_hz", std::clamp(curves::delayLowCutHz(b.raw(F::DelayLowCut)), 20.0f, 12000.0f));
+    b.set("fx.delay_high_cut_hz", std::clamp(curves::delayHighCutHz(b.raw(F::DelayHighCut)), 80.0f, 20000.0f));
     const auto* left = divisionAt(delayDivisions, b.raw(F::DelayTimeLeft));
     const auto* right = divisionAt(delayDivisions, b.raw(F::DelayTimeRight));
     b.chooseDivision("fx.delay_sync_division", left, "Delay left time");
