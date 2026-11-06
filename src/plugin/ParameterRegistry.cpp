@@ -45,6 +45,12 @@ ParameterSpec boolParam(std::string id, std::string name, std::string group, boo
     return spec;
 }
 
+ParameterSpec withFormerChoices(ParameterSpec spec, std::vector<std::pair<std::string, int>> formerChoices)
+{
+    spec.formerChoices = std::move(formerChoices);
+    return spec;
+}
+
 ParameterSpec choiceParam(std::string id, std::string name, std::string group,
                           std::vector<std::string> choices, int defaultChoice)
 {
@@ -174,7 +180,8 @@ std::vector<ParameterSpec> buildSpecs()
         floatParam("direct.pulse_mod_env", "Pulse Env Direct", "direct", "normalized", -1.0f, 1.0f, 0.0f, 0.0001f),
 
         boolParam("fx.saturation_enabled", "Saturation Enabled", "fx", false),
-        choiceParam("fx.distortion_mode", "Distortion Mode", "fx", { "Soft", "Clip", "Fold", "Decimate", "Bitcrush" }, 0),
+        withFormerChoices(choiceParam("fx.distortion_mode", "Distortion Mode", "fx", { "Overdrive", "Clip", "Fold", "Decimate", "Bitcrush" }, 0),
+                          { { "Soft", 0 } }),
         floatParam("fx.saturation_mix", "Saturation Mix", "fx", "normalized", 0.0f, 1.0f, 0.0f, 0.0001f),
         floatParam("fx.saturation_drive", "Saturation Drive", "fx", "normalized", 0.0f, 1.0f, 0.35f, 0.0001f),
         boolParam("fx.phaser_enabled", "Phaser Enabled", "fx", false),

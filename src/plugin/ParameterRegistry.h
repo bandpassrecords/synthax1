@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace synth
@@ -32,6 +33,9 @@ struct ParameterSpec
     int auVersionHint = 1;
     std::vector<std::string> choices;
     int defaultChoice = 0;
+    // Earlier labels of renamed choices and the choice each now means. Presets that store an
+    // earlier label still load; they are written back with the current label.
+    std::vector<std::pair<std::string, int>> formerChoices;
     // The reference synth's Init value for this parameter, when Init sets it: the start value of a new instance and of
     // the Init preset, and what Ctrl+click resets to. Presets load on top of defaultValue, not this.
     bool hasInit = false;
@@ -42,6 +46,18 @@ struct ParameterSpec
 inline float initialParameterValue(const ParameterSpec& spec) noexcept
 {
     return spec.hasInit ? spec.initValue : (spec.kind == ParameterKind::Choice ? static_cast<float>(spec.defaultChoice) : spec.defaultValue);
+}
+
+// The index of a choice label, current or former, or -1 if the parameter has no such choice.
+inline int findChoice(const ParameterSpec& spec, const std::string& label) noexcept
+{
+    for (std::size_t index = 0; index < spec.choices.size(); ++index)
+        if (spec.choices[index] == label)
+            return static_cast<int>(index);
+    for (const auto& [former, index] : spec.formerChoices)
+        if (former == label)
+            return index;
+    return -1;
 }
 
 const std::vector<ParameterSpec>& getParameterSpecs();

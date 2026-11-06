@@ -10,7 +10,7 @@ The payload contains:
 
 - `schema_version`: `2` for newly written patches.
 - `plugin_min_version`, `id`, `display_name`, `author`, `description`, `tags`.
-- `parameters`: registered parameter IDs with physical values; choices use their exact registered strings and switches use booleans.
+- `parameters`: registered parameter IDs with physical values; choices use their exact registered strings and switches use booleans. When a choice is renamed, its former label still reads as the same choice and is written back with the new one: `fx.distortion_mode` `Soft` is now `Overdrive`.
 - `mod_slots`: optional physical or normalized advanced modulation depths.
 - `macros`: optional macro metadata.
 - `metadata`: optional authoring and browser information.

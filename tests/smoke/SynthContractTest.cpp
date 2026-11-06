@@ -619,6 +619,32 @@ bool checkPresetManagerLoadAndSave()
         return false;
     }
 
+    // A renamed choice keeps its former label readable: "Soft" distortion is now "Overdrive".
+    {
+        auto renamed = juce::JSON::parse(juce::File::getCurrentWorkingDirectory().getChildFile(pluckPresetPath));
+        auto* payload = renamed.getDynamicObject();
+        auto* preset = payload != nullptr ? payload->getProperty("preset").getDynamicObject() : nullptr;
+        auto* values = preset != nullptr ? preset->getProperty("parameters").getDynamicObject() : nullptr;
+        const auto renamedFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                     .getChildFile("synthax1-former-choice.Synthax1Preset");
+        if (values == nullptr)
+        {
+            std::cerr << "Former choice check could not read its source preset.\n";
+            return false;
+        }
+        values->setProperty("fx.distortion_mode", "Soft");
+        renamedFile.replaceWithText(juce::JSON::toString(renamed));
+        const auto validation = synth::validatePresetFile(renamedFile.getFullPathName().toStdString());
+        const auto loaded = synth::preparePresetState(processor.parameters, renamedFile.getFullPathName().toStdString());
+        renamedFile.deleteFile();
+        if (!validation.passed() || !loaded.loaded
+            || std::abs(stateParameterValue(loaded.state, "fx.distortion_mode") - 0.0f) > 0.001f)
+        {
+            std::cerr << "A preset with the former distortion label 'Soft' did not load as Overdrive.\n";
+            return false;
+        }
+    }
+
     const auto prepared = synth::preparePresetState(processor.parameters, pluckPresetPath);
     if (!prepared.loaded || !prepared.state.isValid())
     {

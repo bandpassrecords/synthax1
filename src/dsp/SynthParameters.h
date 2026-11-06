@@ -112,7 +112,7 @@ enum class DelaySyncDivision
 
 enum class DistortionMode
 {
-    Soft = 0,
+    Overdrive = 0,
     Clip = 1,
     Fold = 2,
     Decimate = 3,
@@ -388,7 +388,7 @@ struct FxParameters
 {
     bool enabled = true;
     bool saturationEnabled = false;
-    DistortionMode distortionMode = DistortionMode::Soft;
+    DistortionMode distortionMode = DistortionMode::Overdrive;
     float saturationMix = 0.0f;
     float saturationDrive = 0.35f;
     bool phaserEnabled = false;

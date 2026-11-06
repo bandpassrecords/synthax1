@@ -565,7 +565,7 @@ void mapEffects(Builder& b, bool synced)
     const auto audible = b.audible;
     const auto section = [&b, audible](F onOff) { b.audible = audible && b.on(onOff); };
     b.flag("fx.saturation_enabled", b.on(F::XSwDistOnOff));
-    static constexpr std::array<const char*, 5> distortion { "Soft", "Fold", "Clip", "Decimate", "Bitcrush" };
+    static constexpr std::array<const char*, 5> distortion { "Overdrive", "Fold", "Clip", "Decimate", "Bitcrush" };
     b.choose("fx.distortion_mode", distortion[static_cast<std::size_t>(b.index(F::DistortType, 5))]);
     b.set("fx.saturation_drive", b.raw(F::DistortAmount));
     b.set("fx.saturation_mix", b.raw(F::DistortDryWet));

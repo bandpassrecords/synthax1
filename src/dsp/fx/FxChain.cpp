@@ -98,7 +98,7 @@ float distortionGainFor(DistortionMode mode, float drive) noexcept
 {
     switch (mode)
     {
-        case DistortionMode::Soft: return distortionGain(drive, -10.3f, 49.0f);
+        case DistortionMode::Overdrive: return distortionGain(drive, -10.3f, 49.0f);
         case DistortionMode::Clip: return distortionGain(drive, -9.6f, 46.0f);
         case DistortionMode::Fold: return distortionGain(drive, -31.0f, 58.0f);
         case DistortionMode::Decimate:
@@ -430,7 +430,7 @@ FxStereoFrame FxChain::processSaturation(FxStereoFrame input, const SynthParamet
     auto distort = [&](float sample) noexcept {
         switch (parameters.fx.distortionMode)
         {
-            case DistortionMode::Soft: return overdriveDistort(sample, gain);
+            case DistortionMode::Overdrive: return overdriveDistort(sample, gain);
             case DistortionMode::Clip: return clipDistort(sample, gain);
             case DistortionMode::Fold: return foldDistort(sample, gain);
             case DistortionMode::Decimate: return sample;

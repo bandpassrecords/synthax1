@@ -106,7 +106,7 @@ private:
     int decimationCounter = 0;
     // The drive gain of the current mode, recomputed only when the drive or the mode changes.
     float cachedDistortionDrive = -1.0f;
-    DistortionMode cachedDistortionMode = DistortionMode::Soft;
+    DistortionMode cachedDistortionMode = DistortionMode::Overdrive;
     float cachedDistortionGain = 1.0f;
     DelayBuffer chorusSecondLeft;
     DelayBuffer chorusSecondRight;

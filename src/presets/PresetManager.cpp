@@ -77,10 +77,9 @@ int choiceIndex(const ParameterSpec& spec, const juce::var& value)
 {
     if (value.isString())
     {
-        const auto selected = value.toString().toStdString();
-        const auto found = std::find(spec.choices.begin(), spec.choices.end(), selected);
-        if (found != spec.choices.end())
-            return static_cast<int>(std::distance(spec.choices.begin(), found));
+        const auto found = findChoice(spec, value.toString().toStdString());
+        if (found >= 0)
+            return found;
     }
 
     if (isNumber(value))

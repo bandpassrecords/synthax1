@@ -48,8 +48,7 @@ bool isAllowedChoice(const ParameterSpec& spec, const juce::var& value)
     if (!value.isString())
         return false;
 
-    const auto selected = value.toString().toStdString();
-    return std::find(spec.choices.begin(), spec.choices.end(), selected) != spec.choices.end();
+    return findChoice(spec, value.toString().toStdString()) >= 0;
 }
 
 bool isAllowedModDestination(const std::string& targetId)
@@ -194,7 +193,7 @@ void validateParameterValue(PresetValidationResult& result, const ParameterSpec&
         }
 
         const auto selected = value.toString().toStdString();
-        if (std::find(spec.choices.begin(), spec.choices.end(), selected) == spec.choices.end())
+        if (findChoice(spec, selected) < 0)
             result.errors.push_back(spec.id + " has unknown choice '" + selected + "'");
     }
 }
