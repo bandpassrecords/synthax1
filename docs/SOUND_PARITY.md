@@ -271,6 +271,8 @@ Next targets from it: the delay's echoes still last about 3 dB longer than the r
 
 **KeyTrack source and low Distortion amounts** (`keysrc`, 22 programs; `dist0`, 48 programs). The KeyTrack modulation source reads (note - 9.4) / 122, the reference note 9.4 that the Filter Control keytrack knob already used: at full amount a route to Cutoff shifts it by note - 9.4 semitones (peaks at notes 24, 36, 48, 60 at 1.19, 2.48, 5.0, 10.5 kHz). Synthax1 read (note - 60) / 36, which pulled low notes tens of semitones too far down (A2 with KeyTrack on Cutoff at +1 was silent). Within 1.3 semitones now at every note and amount. The corpus reads full 5.8 dB, nofx 6.1 dB. Distortion Amount below 0.1 does not fall further: the gain at 0, 0.02, 0.05 and 0.1 agrees within 1 dB, so Amount 0 is a clean boost; Synthax1 kept falling to -5 dB at 0 (*PLUCK - Das Boot*, Clip at Amount 0, was 10 dB low).
 
+**State of the level outliers after these fixes (full variant, 234 presets):** mean distance 5.8 dB, mean level difference -2.2 dB, 36 beyond 6 dB and 6 beyond 10 dB (29 beyond 10 dB before the 2026-11-06 fixes). The largest are *Drum > Snare* (-17.1 dB; a one-shot whose level is read in a tail around -65 dB, so the figure is mostly the reference synth's noise floor; the decay itself matches), 05-268 (-13.1), 02-157 (-11.8), 01-134 (-11.4), 02-268 (-11.3), 04-023 (-10.6) and *ARP SynthiPop* (-9.9; arpeggiator in Step mode, Filter B and Velocity routes, no single cause found). None of these has been taken apart yet.
+
 ## Cross-check against the manual
 
 The reference manual has no numbers, but it states behaviour. Checked against the measurements:
