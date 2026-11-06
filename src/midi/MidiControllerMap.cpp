@@ -33,8 +33,8 @@ bool validControllerNumber(int controllerNumber) noexcept
 
 std::filesystem::path defaultMidiControllerMapFile()
 {
-    const auto music = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
-    return std::filesystem::path { music.getFullPathName().toStdString() }
+    const auto documents = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    return std::filesystem::path { documents.getFullPathName().toStdString() }
            / "BandPass Records" / "Synthax1" / "MidiControllerMap.json";
 }
 

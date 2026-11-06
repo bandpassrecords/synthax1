@@ -945,8 +945,8 @@ std::filesystem::path factoryPresetDirectory()
 
 std::filesystem::path defaultUserPresetDirectory()
 {
-    const auto music = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
-    return std::filesystem::path { music.getFullPathName().toStdString() } / "BandPass Records" / "Synthax1" / "Presets";
+    const auto documents = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    return std::filesystem::path { documents.getFullPathName().toStdString() } / "BandPass Records" / "Synthax1" / "Presets";
 }
 
 std::filesystem::path defaultPresetFavoritesFile()

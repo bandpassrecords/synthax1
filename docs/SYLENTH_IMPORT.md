@@ -119,7 +119,7 @@ The sync-division choice lists differ in label order between parameters (`lfo.sy
 
 ## Plan
 
-1. **Windows build.** Install the VS 2026 "Desktop development with C++" workload, then build VST3 and Standalone. Upstream's AU-only and `~/Music` assumptions need small platform branches.
+1. **Windows build.** Install the VS 2026 "Desktop development with C++" workload, then build VST3 and Standalone.
 2. **Calibrate and close engine gaps.** Run the calibration bank in Cubase, fit the curves, then make the engine-range changes listed above.
    **Sound parity** (making Synthax1 *sound* like Sylenth1, not only load its presets) has its own plan: `SOUND_PARITY.md`.
 3. **Bank builder UI.** A library across all `.fxb`/`.fxp` files and Synthax1 programs, with search, multi-select, drag to reorder, and one click to save a new `.fxb`. It calls `exportSylenthBank(indices, …)`, and `sylenth_bank.py build` is the reference behaviour.
