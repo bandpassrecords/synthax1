@@ -32,6 +32,12 @@ public:
     bool hasPendingEvents() const noexcept { return heldNoteCount > 0 || activeOutputCount > 0; }
     float getStepVelocity() const noexcept { return stepVelocity; }
 
+    // Length of one step in samples (the arp time is a note division when sync is true).
+    static int stepDurationSamples(const ArpParameters& parameters,
+                                   float tempoBpm,
+                                   double sampleRate,
+                                   int sequenceStep) noexcept;
+
 private:
     struct Candidate
     {
@@ -50,10 +56,6 @@ private:
     static bool candidateComesBefore(const Candidate& left,
                                      const Candidate& right,
                                      ArpMode mode) noexcept;
-    static int stepDurationSamples(const ArpParameters& parameters,
-                                   float tempoBpm,
-                                   double sampleRate,
-                                   int sequenceStep) noexcept;
     static int selectPosition(int sequenceStep, int totalPositions, ArpMode mode) noexcept;
     void releaseOutput(ArpGeneratedEvent& event) noexcept;
 

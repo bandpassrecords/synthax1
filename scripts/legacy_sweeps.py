@@ -681,7 +681,58 @@ def crush_set() -> list[Program]:
     return out
 
 
-SETS = {"crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+def stepvel_set() -> list[Program]:
+    # What Step Velocity reads with the arpeggiator off. Step Velocity into Mix AB at +1 on a sine: first with
+    # the arpeggiator on and every step velocity x (the level then maps x to a mix gain), then with it off and
+    # different step velocities and note velocities; the second group is read against the first.
+    sine = ref.wave("sine")
+    step_route = {"XModMisc1ASource": 11 / 11, "YModMisc1ADest1": 22 / 32, "XModMisc1ADest1Am": 1.0}
+    base = {"OscA1Wave": sine, "MixA": 0.5, "ArpGate": 1.0, **step_route}
+    velos = lambda first, rest: {f"XArpVelo{i:02d}": (first if i == 1 else rest) for i in range(1, 17)}
+    out = []
+    for x in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
+        out.append(Program(f"svon x {x:.2f}", "mod", "", ["rms_db"], {**base, "XSwArpOnOff": 1.0, **velos(x, x)},
+                           [Note(57, 0.25, 3.5, 127)], 4, {"case": "on", "x": x}))
+    for first in (0.2, 0.5, 1.0):
+        out.append(Program(f"svoff first {first:.2f} rest 0.90", "mod", "", ["rms_db"], {**base, "XSwArpOnOff": 0.0, **velos(first, 0.9)},
+                           [Note(57, 0.25, 3.5, 127)], 4, {"case": "off", "first": first}))
+    for rest in (0.2, 1.0):
+        out.append(Program(f"svoff first 0.60 rest {rest:.2f}", "mod", "", ["rms_db"], {**base, "XSwArpOnOff": 0.0, **velos(0.6, rest)},
+                           [Note(57, 0.25, 3.5, 127)], 4, {"case": "off", "first": 0.6}))
+    for velocity in (32, 64, 127):
+        out.append(Program(f"svoff note vel {velocity}", "mod", "", ["rms_db"], {**base, "XSwArpOnOff": 0.0, **velos(0.6, 0.6)},
+                           [Note(57, 0.25, 3.5, velocity)], 4, {"case": "off", "velocity": velocity}))
+    return out
+
+
+def mixneg_set() -> list[Program]:
+    # Step Velocity (arpeggiator off, last step velocity 1.0) into Mix AB across the whole amount range, at three
+    # Mix A knob positions: what a negative amount does when it drives the mix below zero.
+    sine = ref.wave("sine")
+    out = []
+    for mix in (0.1, 0.5, 0.9):
+        for i in range(21):
+            amount = i / 20
+            values = {"OscA1Wave": sine, "MixA": mix, "XSwArpOnOff": 0.0, "XArpVelo16": 1.0, "XModMisc1ASource": 1.0,
+                      "YModMisc1ADest1": 22 / 32, "XModMisc1ADest1Am": amount}
+            out.append(Program(f"mxn mix {mix:.1f} amt {amount:.2f}", "mod", "", ["rms_db"], values, [Note(57, 0.25, 4.0, 127)], 6,
+                               {"mix": mix, "amount": amount}))
+    return out
+
+
+def stepwho_set() -> list[Program]:
+    # Which step's velocity does Step Velocity read with the arpeggiator off? Every step 0.9 except one at 0.2.
+    sine = ref.wave("sine")
+    base = {"OscA1Wave": sine, "MixA": 0.5, "XSwArpOnOff": 0.0, "ArpGate": 1.0, "XModMisc1ASource": 1.0,
+            "YModMisc1ADest1": 22 / 32, "XModMisc1ADest1Am": 1.0}
+    out = []
+    for low in range(1, 17):
+        values = {**base, **{f"XArpVelo{i:02d}": (0.2 if i == low else 0.9) for i in range(1, 17)}}
+        out.append(Program(f"sw low step {low:02d}", "mod", "", ["rms_db"], values, [Note(57, 0.25, 4.0, 127)], 6, {"low": low}))
+    return out
+
+
+SETS = {"stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

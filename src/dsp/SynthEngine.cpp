@@ -65,6 +65,8 @@ void SynthEngine::noteOn(int midiNote, float velocity) noexcept
         return;
 
     const auto noteIndex = static_cast<std::size_t>(midiNote);
+    if (std::none_of(inputHeldNotes.begin(), inputHeldNotes.end(), [](bool held) { return held; }))
+        idleStepIndex = idleStepSamples = 0;
     inputHeldNotes[noteIndex] = true;
     inputHeldVelocities[noteIndex] = std::clamp(velocity, 0.0f, 1.0f);
     inputHeldOrder[noteIndex] = ++inputOrderCounter;
@@ -518,12 +520,34 @@ RenderStats SynthEngine::process(float* left, float* right, int numSamples) noex
     }
     else
     {
-        for (int start = 0; start < stats.samplesRendered; start += renderBlockMaxSamples)
+        // MEASURED (sweeps/stepvel, stepwho): with the arpeggiator off, Step Velocity still follows the step sequence,
+        // started by the first key pressed and advancing at the arp rate; the step velocities are read as they are.
+        const auto stepCount = std::clamp(parameters.arp.stepCount, 1, static_cast<int>(parameters.arp.steps.size()));
+        auto durationParameters = parameters.arp;
+        durationParameters.sync = true;
+        for (int start = 0; start < stats.samplesRendered;)
         {
-            const auto blockSamples = std::min(renderBlockMaxSamples, stats.samplesRendered - start);
+            idleStepIndex %= stepCount;
+            const auto& step = parameters.arp.steps[static_cast<std::size_t>(idleStepIndex)];
+            const auto duration = Arpeggiator::stepDurationSamples(durationParameters, parameters.tempoBpm, sampleRate, idleStepIndex);
+            // The signal is the sequencer gate: the step velocity while the gate is open, zero for the rest of the step.
+            const auto gateProduct = parameters.arp.gate * step.gate;
+            const auto gate = std::clamp(std::isfinite(gateProduct) ? gateProduct : 0.75f, 0.02f, 1.0f);
+            const auto gateSamples = std::clamp(static_cast<int>(static_cast<float>(duration) * gate + 0.5f), 1, duration);
+            const auto gateOpen = idleStepSamples < gateSamples;
+            parameters.performance.stepVelocity = gateOpen && step.enabled ? std::clamp(step.velocity, 0.0f, 1.0f) : 0.0f;
+            const auto untilChange = std::max(1, (gateOpen ? gateSamples : duration) - idleStepSamples);
+            const auto blockSamples = std::min({ renderBlockMaxSamples, stats.samplesRendered - start, untilChange });
             voices.renderBlock(parameters, blockLeft, blockRight, blockSamples, phaserCenterOffsetsHz);
             for (int i = 0; i < blockSamples; ++i)
                 emitSample(start + i, StereoFrame { blockLeft[i], blockRight[i], phaserCenterOffsetsHz[i] });
+            start += blockSamples;
+            idleStepSamples += blockSamples;
+            if (idleStepSamples >= duration)
+            {
+                idleStepSamples = 0;
+                ++idleStepIndex;
+            }
         }
     }
 

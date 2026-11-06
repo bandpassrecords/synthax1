@@ -783,16 +783,31 @@ void mapModulation(Builder& b)
             // MEASURED (sweeps/lfocut): an LFO swings the cutoff about half as far as an envelope does at the same amount.
             if (destination >= 13 && destination <= 15 && std::string_view(source).find("LFO") != std::string_view::npos)
                 amount = legacyAmount * 0.52f;
+            // MEASURED (sweeps/lfodepth, volroute, velocity, stepvel): on Volume an LFO moves the level half as far as
+            // Velocity does (as for pitch and cutoff, where it moves half as far as an envelope); Step Velocity matches
+            // Velocity on Mix. The table holds the LFO depth for Volume (0.5 per unit) and the Velocity depth for Mix
+            // (1.326 per unit); an LFO on Mix is assumed to be half as strong too (not measured).
+            const auto halfSource = std::string_view(source).find("LFO") != std::string_view::npos;
+            auto depthScale = 1.0f;
+            if (destination >= 1 && destination <= 3)
+                depthScale = halfSource ? 1.0f : 2.0f;
+            else if (destination >= 20 && destination <= 22)
+                depthScale = halfSource ? 0.5f : 1.0f;
+            // Depth in units of each target's maximumDepth (the extra targets use it directly); the visible route of a
+            // catalogue destination is that depth as a fraction of the catalogue range.
+            if (depthScale != 1.0f)
+                amount = legacyAmount * depthScale;
+            const auto depthFraction = amount;
             if (targets.front().catalogMax > 0.0f)
-                amount = legacyAmount * targets.front().maximumDepth / targets.front().catalogMax;
+                amount = legacyAmount * depthScale * targets.front().maximumDepth / targets.front().catalogMax;
             b.choose(routePrefix + "destination", targets.front().routeLabel);
             b.set(routePrefix + "amount", amount);
             for (std::size_t extra = 1; extra < targets.size(); ++extra)
             {
-                b.set(prefix + "native." + targets[extra].nativeId, amount * targets[extra].maximumDepth);
-                hiddenDepths = hiddenDepths || amount != 0.0f;
+                b.set(prefix + "native." + targets[extra].nativeId, depthFraction * targets[extra].maximumDepth);
+                hiddenDepths = hiddenDepths || depthFraction != 0.0f;
             }
-            if (targets.size() > 1 && amount != 0.0f)
+            if (targets.size() > 1 && depthFraction != 0.0f)
                 b.approximated("Mod slot " + std::to_string(slot.number) + " " + modDestinations[destination] + " shows as "
                                + targets.front().routeLabel + "; the other oscillators use hidden depths");
         }

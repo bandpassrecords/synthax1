@@ -212,6 +212,27 @@ void testMeasuredCurves()
     check(near(valueOf(mapped, "fx.delay_feedback"), 0.4875f, 0.001f), "delay feedback is knob * 0.975");
 }
 
+void testLevelRouteDepthBySource()
+{
+    // MEASURED: on Volume an LFO moves the level half as far as Velocity does; Step Velocity equals Velocity on Mix.
+    auto routed = [](Field source, float sourceValue, Field destination, float destinationValue) {
+        Patch patch;
+        patch[source] = sourceValue;
+        patch[destination] = destinationValue;
+        patch[Field::XModMisc1ADest1Am] = 1.0f;
+        patch[Field::XModLFO1Dest1Am] = 1.0f;
+        return mapPatch(patch);
+    };
+    const auto velocity = routed(Field::XModMisc1ASource, 1.0f / 11.0f, Field::YModMisc1ADest1, 1.0f / 32.0f);
+    check(near(valueOf(velocity, "transmod.5.route.1.amount"), 0.5f, 0.001f), "velocity into Volume A: 1.0 per unit");
+    const auto lfo = routed(Field::XModMisc1ASource, 0.0f, Field::YModLFO1Dest1, 1.0f / 32.0f);
+    check(near(valueOf(lfo, "transmod.3.route.1.amount"), 0.25f, 0.001f), "LFO into Volume A: 0.5 per unit");
+    const auto stepMix = routed(Field::XModMisc1ASource, 1.0f, Field::YModMisc1ADest1, 22.0f / 32.0f);
+    const auto velocityMix = routed(Field::XModMisc1ASource, 1.0f / 11.0f, Field::YModMisc1ADest1, 22.0f / 32.0f);
+    check(near(valueOf(stepMix, "transmod.5.route.1.amount"), valueOf(velocityMix, "transmod.5.route.1.amount"), 0.0001f),
+          "step velocity into Mix AB equals velocity");
+}
+
 void testUnavailableDivisionIsReported()
 {
     Patch patch;
@@ -227,6 +248,7 @@ void testUnavailableDivisionIsReported()
 int main()
 {
     testMeasuredCurves();
+    testLevelRouteDepthBySource();
     testUnavailableDivisionIsReported();
     testTemplateSelectors();
     testOscillatorsAndFilters();

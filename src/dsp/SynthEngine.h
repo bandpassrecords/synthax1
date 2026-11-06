@@ -85,6 +85,9 @@ private:
     SynthParameters parameters;
     PerformanceState performance;
     Arpeggiator arpeggiator;
+    // Step Velocity with the arpeggiator off: the step sequence still runs from the first key pressed.
+    int idleStepIndex = 0;
+    int idleStepSamples = 0;
     std::array<bool, 128> inputHeldNotes {};
     std::array<float, 128> inputHeldVelocities {};
     std::array<std::uint64_t, 128> inputHeldOrder {};
