@@ -869,6 +869,54 @@ def wheelcut_set() -> list[Program]:
     return out
 
 
+def dist0_set() -> list[Program]:
+    # Distortion at very low amounts (0 to 0.1), types Overdrive/Fold/Clip, saw and sine at two levels, fully wet and half wet.
+    out = []
+    for kind in (0, 1, 2):
+        for wave in ("sine", "saw"):
+            for volume in (0.3, 1.0):
+                for amount in (0.0, 0.02, 0.05, 0.1):
+                    values = {"OscA1Wave": ref.wave(wave), "OscA1Volume": volume, "XSwDistOnOff": 1.0,
+                              "DistortType": kind / 4, "DistortAmount": amount, "DistortDryWet": 1.0}
+                    out.append(Program(f"d0 t{kind} {wave} v{volume:.1f} a{amount:.2f}", "dist", "", ["rms_db"], values,
+                                       [Note(57, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
+def eqsweep_set() -> list[Program]:
+    # Noise through the EQ alone: response = EQ on / EQ off. Bass and Treble gains at mid frequencies, then the two frequency knobs
+    # with the gain at its extreme.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwEQOnOff": 1.0, "EQBass": 0.5, "EQTreble": 0.5, "EQBassFreq": 0.5, "EQTrebleFreq": 0.5}
+    notes = [Note(57, 0.25, 3.0, 100)]
+    out = [Program("eq off 0", "eq", "", ["curve"], {**base, "XSwEQOnOff": 0.0}, notes, 4, {}),
+           Program("eq off 1", "eq", "", ["curve"], {**base, "XSwEQOnOff": 0.0}, notes, 4, {})]
+    for v in (0.0, 0.125, 0.25, 0.375, 0.625, 0.75, 0.875, 1.0):
+        out.append(Program(f"eq bass {v:.3f}", "eq", "", ["curve"], {**base, "EQBass": v}, notes, 4, {}))
+    for v in (0.0, 0.125, 0.25, 0.375, 0.625, 0.75, 0.875, 1.0):
+        out.append(Program(f"eq treble {v:.3f}", "eq", "", ["curve"], {**base, "EQTreble": v}, notes, 4, {}))
+    for v in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
+        out.append(Program(f"eq bassfreq {v:.1f} g0", "eq", "", ["curve"], {**base, "EQBass": 0.0, "EQBassFreq": v}, notes, 4, {}))
+        out.append(Program(f"eq bassfreq {v:.1f} g1", "eq", "", ["curve"], {**base, "EQBass": 1.0, "EQBassFreq": v}, notes, 4, {}))
+    for v in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0):
+        out.append(Program(f"eq treblefreq {v:.1f} g0", "eq", "", ["curve"], {**base, "EQTreble": 0.0, "EQTrebleFreq": v}, notes, 4, {}))
+        out.append(Program(f"eq treblefreq {v:.1f} g1", "eq", "", ["curve"], {**base, "EQTreble": 1.0, "EQTrebleFreq": v}, notes, 4, {}))
+    return out
+
+
+def keysrc_set() -> list[Program]:
+    # The KeyTrack modulation source (Misc 1 A, source 3) on Cutoff A at +1 and -1, noise through LP24 with resonance:
+    # peak frequency against the played note.
+    out = []
+    base = {"OscA1Wave": NOISE, "FilterAType": 1 / 3, "FilterADB": 0.0, "FilterAReso": 0.8, "FilterACutoff": 0.4,
+            "XModMisc1ASource": 3 / 11, "YModMisc1ADest1": 13 / 32}
+    for amount in (1.0, 0.0, 0.75):
+        for note in (24, 36, 48, 60, 72, 84, 96):
+            out.append(Program(f"ks a{amount:.2f} n{note}", "ks", "", ["spectrum"], {**base, "XModMisc1ADest1Am": amount},
+                               [Note(note, 0.25, 3.0, 100)], 4, {}))
+    out.append(Program("ks off n60", "ks", "", ["spectrum"], {**base, "XModMisc1ADest1Am": 0.5}, [Note(60, 0.25, 3.0, 100)], 4, {}))
+    return out
+
+
 def filtermodes_set() -> list[Program]:
     # Noise through every filter mode, slope, resonance and drive at two cutoffs; compared as spectra
     # (parity_compare.py groups by the second field, here the mode).
@@ -1082,7 +1130,7 @@ def stepwho_set() -> list[Program]:
     return out
 
 
-SETS = {"wheelcut": wheelcut_set, "hpdrive": hpdrive_set, "modedrive": modedrive_set, "panlaw": panlaw_set, "delaypan": delaypan_set, "delaycombo": delaycombo_set, "delaysync": delaysync_set, "delayflt": delayflt_set, "delay2": delay2_set, "phstatic3": phstatic3_set, "phstatic2": phstatic2_set, "mixtwo": mixtwo_set, "arpvel": arpvel_set, "lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"keysrc": keysrc_set, "eqsweep": eqsweep_set, "dist0": dist0_set, "wheelcut": wheelcut_set, "hpdrive": hpdrive_set, "modedrive": modedrive_set, "panlaw": panlaw_set, "delaypan": delaypan_set, "delaycombo": delaycombo_set, "delaysync": delaysync_set, "delayflt": delayflt_set, "delay2": delay2_set, "phstatic3": phstatic3_set, "phstatic2": phstatic2_set, "mixtwo": mixtwo_set, "arpvel": arpvel_set, "lfooffset": lfooffset_set, "uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

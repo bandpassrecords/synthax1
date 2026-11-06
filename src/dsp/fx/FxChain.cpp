@@ -96,6 +96,9 @@ float distortionGain(float drive, float offsetDb, float slopeDb) noexcept
 
 float distortionGainFor(DistortionMode mode, float drive) noexcept
 {
+    // MEASURED (sweeps/dist0): below Amount 0.1 the reference synth's gain stays where it is at 0.1 (levels at 0, 0.02, 0.05 and
+    // 0.1 agree within 1 dB), so Amount 0 is a clean boost, not a fall to -15 dB.
+    drive = std::max(drive, 0.1f);
     switch (mode)
     {
         case DistortionMode::Overdrive: return distortionGain(drive, -10.3f, 49.0f);

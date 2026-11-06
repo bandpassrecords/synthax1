@@ -891,7 +891,10 @@ float Voice::evalModSource(const SynthParameters& parameters, ModSource source, 
         case ModSource::AmpEnv:
             return clampUnitFast(ampEnvValue);
         case ModSource::Keytrack:
-            return clampFast((effectiveNote - 60.0f) / 36.0f, -1.0f, 1.0f);
+            // MEASURED (sweeps/keysrc): the KeyTrack source reads (note - 9.4) / 122, the same reference note (9.4) as the Filter Control
+            // keytrack knob: at full amount a route to Cutoff (122 semitones) shifts the cutoff by note - 9.4 semitones. Synthax1 read
+            // (note - 60) / 36, which put low notes tens of semitones below the reference synth's cutoff.
+            return clampFast((effectiveNote - 9.4f) / 122.0f, -1.0f, 1.0f);
         case ModSource::Velocity:
             return clampUnitFast(velocity);
         case ModSource::VelocityGlide:
