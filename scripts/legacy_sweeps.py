@@ -587,7 +587,28 @@ def dist_set() -> list[Program]:
     return out
 
 
-SETS = {"volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+def delay_set() -> list[Program]:
+    # A 20 ms noise burst through the delay alone, sync off, left and right equal, no ping-pong or smear:
+    # echo spacing against the time knob, echo decay against Feedback, level against Dry/Wet.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwDelayOnOff": 1.0, "Sync": 0.0, "DelayDry_Wet": 1.0,
+            "DelayTimeLeft": 0.5, "DelayTimeRight": 0.5, "DelayFeedback": 0.5, "DelayPingPong": 0.0,
+            "DelaySmear": 0.0, "DelaySpread": 0.0, "DelayWidth": 1.0, "DelayLowCut": 0.0, "DelayHighCut": 0.0,
+            "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    out = []
+
+    def add(kind, value, **changes):
+        out.append(Program(f"dly {kind} {value:.2f}", "delay", "", ["echoes"], {**base, **changes},
+                           [Note(57, 0.25, 0.04, 100)], 16, {"kind": kind, "value": value}))
+    for v in (0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 1.0):
+        add("feedback", v, DelayFeedback=v)
+    for v in (0.0, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
+        add("time", v, DelayTimeLeft=v, DelayTimeRight=v, DelayFeedback=0.5)
+    for v in (0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0):
+        add("mix", v, DelayDry_Wet=v, DelayFeedback=0.0)
+    return out
+
+
+SETS = {"delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

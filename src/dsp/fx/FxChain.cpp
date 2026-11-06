@@ -201,7 +201,7 @@ float fxTailLengthSeconds(const SynthParameters& parameters) noexcept
                                  : std::clamp(finiteOrZero(fx.delayTimeLeftMs), 1.0f, 6000.0f) * 0.001f;
         const auto right = synced ? tempoSyncedDelaySeconds(parameters.tempoBpm, fx.delayRightSyncDivision)
                                   : std::clamp(finiteOrZero(fx.delayTimeRightMs), 1.0f, 6000.0f) * 0.001f;
-        const auto feedback = std::clamp(finiteOrZero(fx.delayFeedback), 0.0f, 0.95f);
+        const auto feedback = std::clamp(finiteOrZero(fx.delayFeedback), 0.0f, 0.975f);
         const auto repeats = feedback > 0.0f ? std::max(1.0f, std::ceil(std::log(delayTailFloor) / std::log(feedback))) : 1.0f;
         delayTail = (std::max(left, right) + (fx.delaySmear > 0.0f ? 0.22f : 0.0f)) * repeats;
     }
@@ -898,13 +898,17 @@ FxStereoFrame FxChain::processDelay(FxStereoFrame input, const SynthParameters& 
     };
     delayed.left = filter(delayed.left, delayLowState.left, delayHighState.left, delayDiffusers[0]);
     delayed.right = filter(delayed.right, delayLowState.right, delayHighState.right, delayDiffusers[1]);
-    const auto feedback = std::clamp(finiteOrZero(fx.delayFeedback), 0.0f, 0.95f);
+    const auto feedback = std::clamp(finiteOrZero(fx.delayFeedback), 0.0f, 0.975f);
     const auto spread = clampUnit(finiteOrZero(fx.delaySpread));
     const auto cross = fx.delayPingPong ? spread : 0.0f;
     delayLeft.write(input.left + (delayed.left * (1.0f - cross) + delayed.right * cross) * feedback);
     delayRight.write(input.right + (delayed.right * (1.0f - cross) + delayed.left * cross) * feedback);
     delayed = applyWidth(delayed, fx.delayWidth);
-    return { mix(input.left, delayed.left, mixStates[3]), mix(input.right, delayed.right, mixStates[3]) };
+    // MEASURED (sweeps/delay): like the reverb, the dry signal follows a quarter cosine and the wet gain the reverb's curve.
+    const auto amount = clampUnit(finiteOrZero(mixStates[3]));
+    const auto dry = std::cos(amount * 1.57079632679f);
+    const auto wetGain = reverbWetGain(amount);
+    return { input.left * dry + delayed.left * wetGain, input.right * dry + delayed.right * wetGain };
 }
 
 FxStereoFrame FxChain::processReverb(FxStereoFrame input, const FxParameters& parameters) noexcept

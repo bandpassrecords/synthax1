@@ -205,6 +205,9 @@ void testMeasuredCurves()
     check(choiceOf(mapped, "arp.rate") == "1/8", "arp division");
     check(choiceOf(mapped, "fx.delay_sync_division") == "1/4", "delay left division");
     check(choiceOf(mapped, "fx.delay_right_sync_division") == "1/2", "delay right division");
+    check(near(valueOf(mapped, "fx.delay_time_left_ms"), 498.0f, 3.0f), "free delay time is exponential in the knob (0.8 -> 498 ms)");
+    check(near(valueOf(mapped, "fx.delay_time_right_ms"), 1000.0f, 1.0f), "free delay time at 1.0 is 1 s");
+    check(near(valueOf(mapped, "fx.delay_feedback"), 0.4875f, 0.001f), "delay feedback is knob * 0.975");
 }
 
 void testUnavailableDivisionIsReported()

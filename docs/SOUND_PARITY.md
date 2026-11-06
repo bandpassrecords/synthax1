@@ -243,13 +243,13 @@ python scripts/parity_effects.py research/parity/renders/corpus-fx-legacy resear
 | --- | --- | --- | --- | --- |
 | Distortion | 38 | 6.0 dB | +0.3 / -1.0 dB | |
 | Compressor | 48 | 5.4 dB | -0.4 / +1.8 dB | |
-| Delay | 66 | 4.9 dB | +0.7 / +0.3 dB | -15.5 / -7.4 dB |
+| Delay | 66 | 4.9 → 3.8 dB | +0.7 / +1.1 dB | -15.5 / -7.4 → -12.3 dB |
 | Phaser | 16 | 4.5 dB | -1.0 / -0.4 dB | -71 / -93 dB |
 | Chorus | 19 | 3.8 dB | -1.0 / +0.4 dB | -42 / -58 dB |
 | Reverb | 50 | 3.0 dB | -1.3 / -1.5 dB | -20.3 / -19.5 dB |
 | EQ | 59 | 2.9 dB | +1.0 / +2.0 dB | |
 
-Next targets from it: the delay's echoes last about 8 dB longer than the reference synth's (feedback or its filtering); the phaser and chorus tails die much sooner (the reference synth's feedback rings on); the compressor adds about 2 dB more makeup; and Decimate and Bitcrush are still unmeasured.
+Next targets from it: the delay's echoes still last about 3 dB longer than the reference synth's on real presets (the sweep matches, so look at the low/high cut, smear and ping-pong paths; fixed in the sweep, see Delay below); the phaser and chorus tails die much sooner (the reference synth's feedback rings on); the compressor adds about 2 dB more makeup; and Decimate and Bitcrush are still unmeasured.
 
 ## Cross-check against the manual
 
@@ -266,7 +266,7 @@ The reference manual has no numbers, but it states behaviour. Checked against th
 | Normal portamento slides only when another key is held; Slide always | **not yet tested** (and the glide-time curve is unmeasured) |
 | Step velocity "-" skips the note | **not yet tested** |
 | LFO gain 0 turns the phaser LFO off; Free LFO neither retriggers nor syncs | partly covered |
-| Delay Dry/Wet at 10 mutes the original | **not yet tested** |
+| Delay Dry/Wet at 10 mutes the original | confirmed (`delay` sweep: dry at -240 dB) |
 
 The manual cannot supply the numbers; those have to be measured.
 
@@ -277,7 +277,7 @@ The manual cannot supply the numbers; those have to be measured.
 3. **Trisaw** waveform (-2.9 dB) and the pitch-modulation envelope shape ("MOD pitch env").
 4. **Phaser and compressor dynamics:** attack/release times and the phaser LFO law are unmeasured (the static curves match).
 5. **Other modulation depths** (pitch, pan, resonance, LFO gain destinations): only part volume and filter cutoff are calibrated.
-6. **Reverb, delay, distortion types** have not been measured in detail; **Sync-off** delay and arp times and **portamento** likewise.
+6. **Reverb, distortion types** have not been measured in detail; **Sync-off** arp times and **portamento** likewise.
 
 ## Status
 
@@ -318,6 +318,16 @@ Fine sweeps of oscillator octave and arpeggiator step transpose (`octbins`, `arp
 - **Dry/Wet**: the dry signal follows a quarter sine and the wet gain is about mix^1.9 (0.0094, 0.073, 0.288, 0.61 at 0.1, 0.25, 0.5, 0.75), not a linear crossfade.
 - The wet level also depends on Size in the reference synth; a measured trim makes the tail level match to within 1 dB across Size, and within about 1 dB across Damp (Synthax1's tail is a little shorter-lived at high Damp: RT 1.6 s against 1.43 to 1.8 s).
 - 20-preset ablation full: 14.9 to 14.2.
+
+## Delay (measured)
+
+`delay` sweep (a 40 ms noise burst through the delay alone, Sync off, left = right, no ping-pong, smear or cuts):
+
+- **Time (Sync off)** is exponential in the knob: `1000 ms * e^(3.49 * (knob - 1))`: 43, 61, 88, 123, 175, 247, 351, 498, 705 and 1000 ms at 0.1 ... 1.0 (echo spacing within 1 ms). Below 0.05 the formula is an extrapolation (30 ms at 0). The mapper used the sync divisions at 120 BPM before.
+- **Feedback** is a gain of `knob * 0.975` per echo (-14.2, -8.2, -4.7, -2.2, -1.1 and -0.2 dB at 0.2, 0.4, 0.6, 0.8, 0.9 and 1.0). Synthax1 used `knob * 0.86` and stopped at 0.86, so echoes died much sooner at high settings; the `fx.delay_feedback` range now ends at 0.975.
+- **Dry/Wet** is the same law as the reverb: dry follows a quarter cosine (-3 dB at 0.5), the wet gain is the reverb's table (about mix^1.9). It was a linear crossfade. After the change dry and first echo are within 0.5 dB at nine settings.
+- 66 real presets: response difference 4.9 to 3.8 dB; the tail one second after release went from -7.4 to -12.3 dB (reference synth -15.5 dB).
+- Not measured here: low/high cut, smear, spread, ping-pong and the synced divisions beyond what the mapper already checks.
 
 ## Controls
 

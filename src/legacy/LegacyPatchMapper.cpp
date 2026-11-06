@@ -60,6 +60,7 @@ float combinedFilterHz(float part, float control) noexcept
 
 float lfoHz(float n) noexcept { return 0.0417f * std::exp(8.4352f * clamp01(n)); }       // MEASURED, free-running
 float delayLowCutHz(float n) noexcept { return 3.2328f * std::exp(9.0109f * clamp01(n)); } // MEASURED
+float delayTimeMs(float n) noexcept { return 1000.0f * std::exp(3.49f * (clamp01(n) - 1.0f)); } // MEASURED, Sync off; below 0.05 extrapolated
 float delayHighCutHz(float n) noexcept { return 21120.0f * std::exp(-5.545f * clamp01(n)); } // MEASURED, falls as n rises
 float eqBassHz(float n) noexcept { return 13.75f * std::exp(4.1589f * clamp01(n)); }      // MEASURED
 float eqTrebleHz(float n) noexcept { return 440.0f * std::exp(4.1589f * clamp01(n)); }    // MEASURED
@@ -625,7 +626,7 @@ void mapEffects(Builder& b, bool synced)
     b.flag("fx.delay_enabled", b.on(F::XSwDelayOnOff));
     section(F::XSwDelayOnOff);
     b.set("fx.delay_mix", b.raw(F::DelayDry_Wet));
-    b.set("fx.delay_feedback", b.raw(F::DelayFeedback) * 0.86f);
+    b.set("fx.delay_feedback", b.raw(F::DelayFeedback) * 0.975f); // MEASURED: echo gain = knob * 0.975
     b.flag("fx.delay_ping_pong", b.on(F::DelayPingPong));
     b.set("fx.delay_smear", b.raw(F::DelaySmear));
     b.set("fx.delay_spread", b.raw(F::DelaySpread));
@@ -637,9 +638,8 @@ void mapEffects(Builder& b, bool synced)
     const auto* right = divisionAt(delayDivisions, b.raw(F::DelayTimeRight));
     b.chooseDivision("fx.delay_sync_division", left, "Delay left time");
     b.chooseDivision("fx.delay_right_sync_division", right, "Delay right time");
-    // ESTIMATED: Sync-off delay times are not measured; use the divisions at 120 BPM.
-    b.set("fx.delay_time_left_ms", std::clamp(beatsOf(left) * 500.0f, 1.0f, 6000.0f));
-    b.set("fx.delay_time_right_ms", std::clamp(beatsOf(right) * 500.0f, 1.0f, 6000.0f));
+    b.set("fx.delay_time_left_ms", curves::delayTimeMs(b.raw(F::DelayTimeLeft)));
+    b.set("fx.delay_time_right_ms", curves::delayTimeMs(b.raw(F::DelayTimeRight)));
 
     b.flag("fx.compressor_enabled", b.on(F::XSwCompOnOff));
     section(F::XSwCompOnOff);

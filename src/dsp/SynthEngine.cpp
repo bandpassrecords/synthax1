@@ -361,7 +361,7 @@ void SynthEngine::setParameters(const SynthParameters& newParameters) noexcept
     parameters.fx.phaserFeedback = std::clamp(finiteOr(parameters.fx.phaserFeedback, defaults.fx.phaserFeedback), 0.0f, 0.95f);
     parameters.fx.delayMix = std::clamp(finiteOr(parameters.fx.delayMix, defaults.fx.delayMix), 0.0f, 1.0f);
     parameters.fx.delaySyncDivision = static_cast<DelaySyncDivision>(std::clamp(static_cast<int>(parameters.fx.delaySyncDivision), 0, 17));
-    parameters.fx.delayFeedback = std::clamp(finiteOr(parameters.fx.delayFeedback, defaults.fx.delayFeedback), 0.0f, 0.86f);
+    parameters.fx.delayFeedback = std::clamp(finiteOr(parameters.fx.delayFeedback, defaults.fx.delayFeedback), 0.0f, 0.975f);
     parameters.fx.reverbMix = std::clamp(finiteOr(parameters.fx.reverbMix, defaults.fx.reverbMix), 0.0f, 1.0f);
     parameters.fx.reverbDecay = std::clamp(finiteOr(parameters.fx.reverbDecay, defaults.fx.reverbDecay), 0.0f, 1.0f);
     parameters.fx.chorusMix = std::clamp(finiteOr(parameters.fx.chorusMix, defaults.fx.chorusMix), 0.0f, 1.0f);

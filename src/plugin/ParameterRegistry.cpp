@@ -192,7 +192,7 @@ std::vector<ParameterSpec> buildSpecs()
         boolParam("fx.delay_enabled", "Delay Enabled", "fx", false),
         floatParam("fx.delay_mix", "Delay Mix", "fx", "normalized", 0.0f, 1.0f, 0.0f, 0.0001f),
         choiceParam("fx.delay_sync_division", "Delay Sync", "fx", { "1/16", "1/8", "1/8D", "1/4", "1/2", "1/32", "1/32T", "1/32D", "1/16T", "1/16D", "1/8T", "1/4T", "1/4D", "1/2T", "1/2D", "1 bar", "1 barT", "1 barD" }, 1),
-        floatParam("fx.delay_feedback", "Delay Feedback", "fx", "normalized", 0.0f, 0.86f, 0.22f, 0.0001f),
+        floatParam("fx.delay_feedback", "Delay Feedback", "fx", "normalized", 0.0f, 0.975f, 0.22f, 0.0001f),
         boolParam("fx.reverb_enabled", "Reverb Enabled", "fx", false),
         floatParam("fx.reverb_mix", "Reverb Mix", "fx", "normalized", 0.0f, 1.0f, 0.0f, 0.0001f),
         floatParam("fx.reverb_decay", "Reverb Decay", "fx", "normalized", 0.0f, 1.0f, 0.35f, 0.0001f),
