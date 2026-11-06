@@ -3,7 +3,8 @@
 
   parity_compare.py LEGACY_DIR SYNTHAX1_DIR MANIFEST.json [--worst N]
 
-Per program, on each program's loudest steady note: level difference in dB, and the spectral
+Per program, on the steady part of the note that is loudest in the reference synth's render (the
+same note in both): level difference in dB, and the spectral
 distance: mean absolute dB difference between the two 1/6-octave-smoothed spectra from 60 Hz
 to 16 kHz (0 = identical shape, bigger = more different). Free-running phases make
 sample-by-sample comparison meaningless, so everything here is spectral or level based.
@@ -21,21 +22,26 @@ from scipy.io import wavfile
 from scipy.signal import welch
 
 
-def steady_segment(renders: Path, program: dict) -> tuple[int, np.ndarray]:
+def steady_segment(renders: Path, program: dict, note_index: int | None = None) -> tuple[int, np.ndarray, int]:
+    """The held part of one note: the loudest one, or `note_index` when given, so that two renders
+    of the same program are measured on the same note. Returns the rate, the samples and the note."""
     rate, data = wavfile.read(next(renders.glob(f"{program['program']:02d} *.wav")))
     x = data.astype(np.float64)
     x = x.mean(axis=1) if x.ndim == 2 else x
     best = None
-    for note in program["notes"]:
+    for index, note in enumerate(program["notes"]):
         on, off = note["on_s"] - program["start_s"], note["off_s"] - program["start_s"]
         start, stop = int((on + min(0.35, (off - on) * 0.4)) * rate), int(off * rate)
         if stop - start < rate // 4:
             start = int(on * rate + 0.05 * rate)
         segment = x[start:stop]
         level = np.sqrt((segment ** 2).mean()) if len(segment) else 0.0
-        if best is None or level > best[0]:
-            best = (level, segment)
-    return rate, best[1]
+        if note_index is not None:
+            if index == note_index:
+                best = (level, segment, index)
+        elif best is None or level > best[0]:
+            best = (level, segment, index)
+    return rate, best[1], best[2]
 
 
 def smoothed_spectrum(x: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray]:
@@ -54,8 +60,8 @@ def main() -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     rows = []
     for program in manifest["programs"]:
-        rate, a = steady_segment(legacy, program)
-        _, b = steady_segment(synthax1, program)
+        rate, a, note = steady_segment(legacy, program)
+        _, b, _ = steady_segment(synthax1, program, note)
         level_a = 20 * np.log10(np.sqrt((a ** 2).mean()) + 1e-12)
         level_b = 20 * np.log10(np.sqrt((b ** 2).mean()) + 1e-12)
         centres, sa = smoothed_spectrum(a, rate)

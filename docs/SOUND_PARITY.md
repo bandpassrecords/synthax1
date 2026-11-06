@@ -215,6 +215,42 @@ Reading it: the biggest remaining step is still the **arpeggiator and effects** 
 
 First finding from it: Mono Legato is a mode button that makes the reference synth monophonic whatever its polyphony knob says; the mapper only did that for polyphony 1.
 
+## Large corpus (2026-11-06)
+
+Two sets built from 234 real presets (the six factory banks plus 45 third-party banks), rendered by both synths and kept in `research/parity/corpus` (git-ignored, like the banks themselves):
+
+```
+python scripts/parity_presets.py research/parity/corpus FactoryBank1.fxb@24 ... other.fxb@2 --variants full,nofx --name corpus
+python scripts/parity_presets.py research/parity/corpus FactoryBank1.fxb@10 ... other.fxb@2 --variants full,nofx --fx-each --name corpus-fx
+LegacyRenderHost --plugin <the reference synth.vst3> --bank research/parity/corpus/corpus.fxb --manifest research/parity/corpus/corpus.json --out research/parity/renders/corpus-legacy
+Synthax1Render --legacy-bank research/parity/corpus/corpus.fxb --manifest research/parity/corpus/corpus.json --output-dir research/parity/renders/corpus-synthax1
+python scripts/parity_compare.py research/parity/renders/corpus-legacy research/parity/renders/corpus-synthax1 research/parity/corpus/corpus.json
+python scripts/parity_effects.py research/parity/renders/corpus-fx-legacy research/parity/renders/corpus-fx-synthax1 research/parity/corpus/corpus-fx.json --worst 3
+```
+
+`corpus` (468 programs, 31 minutes) is the reference point for engine changes that should not change the sound. With it, control-rate modulation every 4 samples left the mean distance unchanged (full 8.4, nofx 9.1 dB). `corpus-fx` (106 presets, 508 programs) adds, per preset, one variant per effect it uses with only that effect on; `parity_effects.py` compares what each effect changes against the same preset dry, so it measures the effects without the dry sound's own differences.
+
+**Metric fix.** `parity_compare.py` picked the loudest note separately in each render, so when two notes were about equally loud it compared different notes. It now measures the note that is loudest in the reference synth's render in both. Earlier figures in this document were inflated by this: the reference set's oscillator module drops from 10.3 to 1.1 dB, and the 20-preset ablation from full 13.2 / bare oscillators 9.6 to 10.6 / 2.7 dB.
+
+**Level outliers.** 29 of the 234 presets differ in level by more than 10 dB; two are silent in Synthax1:
+
+- *BS THAT Psy Bass* (FactoryBank5 #290): oscillators A1, A2 and B1 sit at Volume 0 and a velocity route to Volume A and Volume B brings them in. Synthax1 maps Volume A/B to the part level, after the oscillators, so nothing sounds. In the reference synth the route evidently acts on the oscillator volumes; the scale needs measuring.
+- *SFX - METADIGI BELLZ* (FactoryBank3 #445): Step Velocity to Mix AB at -0.82. Synthax1's step velocity is 1 when no arp step plays, which drives the mix to zero; the reference synth still sounds. To be measured with the arpeggiator on and off.
+
+**Effects** (means over the presets that use each effect; level and tail as reference synth / Synthax1):
+
+| Effect | Presets | Response difference | Level change | Tail 1 s after release |
+| --- | --- | --- | --- | --- |
+| Distortion | 38 | 6.0 dB | +0.3 / -1.0 dB | |
+| Compressor | 48 | 5.4 dB | -0.4 / +1.8 dB | |
+| Delay | 66 | 4.9 dB | +0.7 / +0.3 dB | -15.5 / -7.4 dB |
+| Phaser | 16 | 4.5 dB | -1.0 / -0.4 dB | -71 / -93 dB |
+| Chorus | 19 | 3.8 dB | -1.0 / +0.4 dB | -42 / -58 dB |
+| Reverb | 50 | 3.0 dB | -1.3 / -1.5 dB | -20.3 / -19.5 dB |
+| EQ | 59 | 2.9 dB | +1.0 / +2.0 dB | |
+
+Next targets from it: the delay's echoes last about 8 dB longer than the reference synth's (feedback or its filtering); the phaser and chorus tails die much sooner (the reference synth's feedback rings on); the compressor adds about 2 dB more makeup; and Decimate and Bitcrush are still unmeasured.
+
 ## Cross-check against the manual
 
 The reference manual has no numbers, but it states behaviour. Checked against the measurements:
