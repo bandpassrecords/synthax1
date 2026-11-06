@@ -251,7 +251,7 @@ After these fixes the corpus's largest level differences (full variant, Synthax1
 | Reverb | 50 | 3.0 dB | -1.3 / -1.5 dB | -20.3 / -19.5 dB |
 | EQ | 59 | 2.9 dB | +1.0 / +2.0 dB | |
 
-Next targets from it: the delay's echoes still last about 3 dB longer than the reference synth's on real presets (the sweep matches; look at the low/high cut, smear and ping-pong); the phaser (below); Fold and Bitcrush distortion; and the remaining spectral differences, which are largest for distortion (6.0 dB).
+Next targets from it: the delay's echoes still last about 3 dB longer than the reference synth's on real presets (the sweep matches; look at the low/high cut, smear and ping-pong); the phaser (below); Bitcrush distortion; and the remaining spectral differences, which are largest for distortion (6.0 dB).
 
 ## Envelopes and filter resonance (measured 2026-11-06)
 
@@ -362,7 +362,7 @@ Knobs read 0 to 10 (or -10 to 10 for bipolar ones) like the reference synth, the
 
 - **Cutoff:** The reference synth's part cutoff and Filter Control cutoff add in the knob domain (Hz = 0.0647 e^(10.15 (part + control))). Synthax1's part cutoff spanned 0 to 136 semitones with the control neutral at 0.27, so knob 5 on both sounded very different (Synthax1 about 400 Hz, the reference synth 1.7 kHz). The part range is now 0 to 176 semitones (clipped at 136, about 20 kHz, in the filter) and the Filter Control spans -88 to +88 with its centre neutral; knob 5 gives the same cutoff as the reference synth's.
 - **Polyphony** reads raw x 16 (Init: 0.1875 shows 3 voices), one fewer than the importer used.
-- **Distortion** (`dist`: five types, a sine at two levels, five amounts, fully wet; the manual names them Overdrive, Foldback, Clip, Decimate, Bitcrush): Amount is a pre-gain of about -15 dB at 0 rising about 50 dB over the knob (so 0.1 is quiet and clean) into a ceiling near -17.5 dB. Overdrive rounds the ceiling (tanh) and ends close to a square wave at 1.0 (third harmonic -10.7 dB); Clip cuts it. Synthax1's old soft saturator already added 13 dB at 0.1 and could not reach a hard overdrive. Overdrive and Clip now match within about 1 dB in level and a few dB in harmonics. Foldback is only roughly matched; Decimate and Bitcrush are unchanged and not yet measured.
+- **Distortion** (`dist`: five types, a sine at two levels, five amounts, fully wet; the manual names them Overdrive, Foldback, Clip, Decimate, Bitcrush): Amount is a pre-gain of about -15 dB at 0 rising about 50 dB over the knob (so 0.1 is quiet and clean) into a ceiling near -17.5 dB. Overdrive rounds the ceiling (tanh) and ends close to a square wave at 1.0 (third harmonic -10.7 dB); Clip cuts it. Synthax1's old soft saturator already added 13 dB at 0.1 and could not reach a hard overdrive. Overdrive and Clip now match within about 1 dB in level and a few dB in harmonics. Foldback (re-fitted 2026-11-06): the same 0.155 ceiling as Overdrive reached through a sine fold, gain -13.5 dB + 50 dB x Amount; levels now within 0.5 dB at eight of ten points (worst +4.5 dB at full amount, where the reference folds deeper). The old fold sat 10 dB too low at small amounts. Decimate is matched (below); Bitcrush is not.
 
 ## Preset browser
 

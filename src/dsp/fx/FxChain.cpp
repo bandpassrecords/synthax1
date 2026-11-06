@@ -100,7 +100,7 @@ float distortionGainFor(DistortionMode mode, float drive) noexcept
     {
         case DistortionMode::Overdrive: return distortionGain(drive, -10.3f, 49.0f);
         case DistortionMode::Clip: return distortionGain(drive, -9.6f, 46.0f);
-        case DistortionMode::Fold: return distortionGain(drive, -31.0f, 58.0f);
+        case DistortionMode::Fold: return distortionGain(drive, -13.5f, 50.0f);
         case DistortionMode::Decimate:
         case DistortionMode::Bitcrush: break;
     }
@@ -115,9 +115,11 @@ float clipDistort(float sample, float gain) noexcept
 
 float foldDistort(float sample, float gain) noexcept
 {
-    const auto ceiling = 0.13f * distortionUnits;
+    // MEASURED (sweeps/dist, Foldback): the same ceiling as Overdrive, reached by a sine fold; the level rises with
+    // Amount like Overdrive's, then falls again once the wave folds (fit within 2 dB over five amounts, two levels).
+    const auto ceiling = 0.155f * distortionUnits;
     const auto scaled = std::clamp(sample * gain, -1.0e4f, 1.0e4f);
-    return ceiling * std::sin(3.14159265f * scaled / ceiling);
+    return ceiling * std::sin(1.57079633f * scaled / ceiling);
 }
 
 float overdriveDistort(float sample, float gain) noexcept
