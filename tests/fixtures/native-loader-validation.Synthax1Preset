@@ -2,7 +2,7 @@
   "fileType": "Synthax1Preset",
   "presetName": "Native Loader Validation",
   "presetAuthor": "Test",
-  "presetDescription": "Local state-loading behavior fixture. This is not an original Sylenth reference.",
+  "presetDescription": "Local state-loading behavior fixture. This is not an original Legacy reference.",
   "product": "Synthax1",
   "productVersion": "0.1.0",
   "tags": [
@@ -25,7 +25,7 @@
     "id": "native-loader-validation",
     "display_name": "Native Loader Validation",
     "author": "Test",
-    "description": "Local state-loading behavior fixture. This is not an original Sylenth reference.",
+    "description": "Local state-loading behavior fixture. This is not an original Legacy reference.",
     "tags": [
       "test",
       "modulation"

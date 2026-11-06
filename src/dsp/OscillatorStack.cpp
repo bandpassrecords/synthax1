@@ -117,7 +117,7 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
     const auto frequency = clampFast(midiNoteToHz(note), 1.0f, rate * 0.45f);
     const auto detune = clampUnitFast(parameters.detune);
     updateDetuneRatios(count, detune);
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/unison): n coherent voices add up to an amplitude of
+    // MEASURED (the reference synth 3.0.7.3, sweeps/unison): n coherent voices add up to an amplitude of
     // 0.8 + 0.2 n, so each voice carries (0.8 + 0.2 n) / n.
     const auto gain = 0.7f * clampFast(parameters.level, 0.0f, 4.0f)
                     * (0.8f + 0.2f * static_cast<float>(count)) / static_cast<float>(count);
@@ -128,7 +128,7 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
         cachedNativePanCount = count;
         cachedNativePan = parameters.pan;
         cachedNativeStereo = spread;
-        // MEASURED (Sylenth1 3.0.7.3, sweeps/unipan, voice counts 2-8): each unison voice is panned hard to
+        // MEASURED (the reference synth 3.0.7.3, sweeps/unipan, voice counts 2-8): each unison voice is panned hard to
         // one side by the amount of the Stereo knob, not spread smoothly. Mirror voices (about the
         // centre) take opposite sides; the outside-in side sequence is L R R L (Thue-Morse) for an even
         // count and L R L for an odd one, and the middle voice of an odd count stays centred. The gains
@@ -167,7 +167,7 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
                 + 4.0f * correction(position) - 4.0f * correction(position + 0.5f);
         };
         auto value = 0.0f;
-        // MEASURED (Sylenth1 3.0.7.3, sweeps/startwave): where each waveform starts when a voice retriggers
+        // MEASURED (the reference synth 3.0.7.3, sweeps/startwave): where each waveform starts when a voice retriggers
         // at Phase 0, as a shift of the cycle (saw half a cycle, triangle a quarter, trisaw 0.09). The
         // pulse waves start inverted. Only matters when oscillators are layered with Retrig on.
         switch (parameters.waveform)
@@ -183,15 +183,15 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
             case OscillatorSlotWaveform::Pulse: value = -renderPulse(phase, increment, 0.5f); break;
             case OscillatorSlotWaveform::HalfPulse: value = -(renderPulse(phase, increment, 0.25f) + 0.5f); break;
             case OscillatorSlotWaveform::QuarterPulse: value = -(renderPulse(phase, increment, 0.125f) + 0.75f); break;
-            // MEASURED (Sylenth1 3.0.7.3): its noise oscillator is 10.2 dB above the same-level saw,
+            // MEASURED (the reference synth 3.0.7.3): its noise oscillator is 10.2 dB above the same-level saw,
             // white and identical in both channels.
             case OscillatorSlotWaveform::Noise: value = renderNoise() * 3.24f; break;
             case OscillatorSlotWaveform::Sine: value = std::sin(2.0f * pi * phase); break;
             case OscillatorSlotWaveform::Triangle: value = triangle(phase); break;
             case OscillatorSlotWaveform::SawTriangle:
-                // MEASURED (Sylenth1 3.0.7.3, sweeps/wavespec): odd harmonics only, falling as 0.85/n after a
+                // MEASURED (the reference synth 3.0.7.3, sweeps/wavespec): odd harmonics only, falling as 0.85/n after a
                 // stronger fundamental, which is a square wave plus a little sine; level matched to the
-                // fundamental of the Sylenth1 render.
+                // fundamental of the the reference synth render.
                 value = 0.496f * renderPulse(phase, increment, 0.5f) + 0.110f * std::sin(2.0f * pi * phase);
                 break;
         }
@@ -548,7 +548,7 @@ float OscillatorStack::detuneOffsetCents(int index, int count, float detune) noe
 
     const auto normalizedIndex = (2.0f * static_cast<float>(index) / static_cast<float>(count - 1)) - 1.0f;
     const auto shapedDetune = clampUnitFast(detune);
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/univoices): the outer voice's offset at full detune depends on the
+    // MEASURED (the reference synth 3.0.7.3, sweeps/univoices): the outer voice's offset at full detune depends on the
     // voice count, and falls with detune as d^2.9 (about 51 cents at d 0.5 with eight voices). The voices
     // in between are spread evenly.
     constexpr std::array<float, 9> outerCentsAtFullDetune { 0.0f, 0.0f, 100.0f, 148.0f, 195.0f, 240.0f, 284.0f, 327.0f, 370.0f };

@@ -8,7 +8,7 @@ namespace synth
 {
 namespace
 {
-// Stage shapes measured from Sylenth1 3.0.7.3 (research/parity, sweeps/env). Each stage has
+// Stage shapes measured from the reference synth 3.0.7.3 (research/parity, sweeps/env). Each stage has
 // one fixed shape stretched over its time; times of all lengths trace the same curve.
 //
 // Attack: level at t/T for T = the attack time (reaching 99%), 33 points. Slow start,

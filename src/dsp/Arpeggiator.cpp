@@ -153,7 +153,7 @@ ArpGeneratedEvent Arpeggiator::processSample(const SynthParameters& parameters, 
         }
         const auto isSequence = parameters.arp.mode == ArpMode::StepSequence;
         const auto isChord = parameters.arp.mode == ArpMode::StepChord;
-        // MEASURED (Sylenth1 3.0.7.3, sweeps/arpmodes): Step mode plays the most recently pressed key.
+        // MEASURED (the reference synth 3.0.7.3, sweeps/arpmodes): Step mode plays the most recently pressed key.
         auto lastPressed = 0;
         for (int i = 1; i < candidateCount; ++i)
             if (candidates[static_cast<std::size_t>(i)].order > candidates[static_cast<std::size_t>(lastPressed)].order)
@@ -179,7 +179,7 @@ ArpGeneratedEvent Arpeggiator::processSample(const SynthParameters& parameters, 
             return stepValue * keyVelocity;
         };
         auto durationParameters = parameters.arp;
-        durationParameters.sync = true; // the arp time is always a note division, as on Sylenth1
+        durationParameters.sync = true; // the arp time is always a note division, as on the reference synth
         const auto duration = stepDurationSamples(durationParameters, parameters.tempoBpm, sampleRate, sequenceStep);
         const auto rest = !step.enabled || step.velocity <= 0.0f;
         if (!rest)

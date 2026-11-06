@@ -33,7 +33,7 @@ A program bank uses `.Synthax1Bank`, an owned JSON format:
 
 The XML is a JUCE ValueTree. `PROGRAM_BANK` contains exactly 512 `PROGRAM` records with unique zero-based `index` and nonempty `name` fields. A populated record contains its `SYNTHAX1_STATE` sound state and a `BASELINE` child holding the original program state for Reset. An empty record represents registry-default Init. Bank loading validates the envelope, version, slot count, indices, names, state types, finite numeric values and registered parameter ranges before replacing the bank. Files above 64 MB are rejected.
 
-**Sylenth1 `.fxp` and `.fxb` files** are imported and exported by the bank load/save commands; see `SYLENTH_IMPORT.md` for the layout, the mapping and its limits.
+**the reference synth `.fxp` and `.fxb` files** are imported and exported by the bank load/save commands; see `LEGACY_IMPORT.md` for the layout, the mapping and its limits.
 
 Create-new saves use exclusive creation and reject an existing destination. Overwrite saves write a temporary file and replace the target through JUCE's temporary-file operation. Both patch and bank saves run outside the audio thread. External user files are not rewritten during factory authoring or startup.
 

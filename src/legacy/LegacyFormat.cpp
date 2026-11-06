@@ -1,4 +1,4 @@
-#include "SylenthFormat.h"
+#include "LegacyFormat.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,24 +6,24 @@
 #include <filesystem>
 #include <fstream>
 
-namespace synth::sylenth
+namespace synth::legacy
 {
 namespace
 {
 constexpr std::array<std::string_view, fieldCount> fieldNames {
 #define X(name, kind) #name,
-#include "SylenthFields.inc"
+#include "LegacyFields.inc"
 #undef X
 };
 
 constexpr std::array<std::string_view, fieldCount> fieldKinds {
 #define X(name, kind) #kind,
-#include "SylenthFields.inc"
+#include "LegacyFields.inc"
 #undef X
 };
 
 constexpr std::array<float, fieldCount> initValues {
-#include "SylenthInit.inc"
+#include "LegacyInit.inc"
 };
 
 constexpr std::size_t outerHeaderBytes = 28; // CcnK, byteSize, magic, version, fxID, fxVersion, count
@@ -204,7 +204,7 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto header = peekHeader(chunk);
     if (!header)
     {
-        error = "chunk does not start with the Sylenth1 signature";
+        error = "chunk does not start with the the reference synth signature";
         return false;
     }
 
@@ -216,18 +216,18 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto body = chunk.subspan(8);
     if (!isZlibHeader(body))
     {
-        error = "Sylenth1 chunk header is inconsistent (" + std::to_string(header->programs) + " programs of "
+        error = "The reference synth chunk header is inconsistent (" + std::to_string(header->programs) + " programs of "
               + std::to_string(header->fields) + " fields in " + std::to_string(chunk.size()) + " bytes)";
         return false;
     }
     if (!zlib.inflate)
     {
-        error = "this Sylenth1 " + std::to_string(header->version) + " file is compressed and no zlib decoder is available";
+        error = "this the reference synth " + std::to_string(header->version) + " file is compressed and no zlib decoder is available";
         return false;
     }
     if (!zlib.inflate(body, storage, maximumFileBytes))
     {
-        error = "compressed Sylenth1 chunk is corrupt or larger than 64 MB";
+        error = "compressed the reference synth chunk is corrupt or larger than 64 MB";
         return false;
     }
 
@@ -236,7 +236,7 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto inner = peekHeader(plain);
     if (!inner || !plausible(*inner, plain.size()))
     {
-        error = "decompressed Sylenth1 chunk is inconsistent";
+        error = "decompressed the reference synth chunk is inconsistent";
         return false;
     }
     return true;
@@ -384,13 +384,13 @@ bool parseParameterProgram(Reader& in, Patch& patch, ReadResult& result, std::si
     const auto paramCount = in.i32be();
     if (chunkMagic != "CcnK" || magic != "FxCk" || id != "syl1")
     {
-        result.error = label + " is not a Sylenth1 FxCk record";
+        result.error = label + " is not a the reference synth FxCk record";
         return false;
     }
     if (paramCount < fieldCount || paramCount > maximumFields
         || !in.has(nameBytesInFxHeader + static_cast<std::size_t>(paramCount) * 4))
     {
-        result.error = label + " has " + std::to_string(paramCount) + " parameters; Sylenth1 needs at least "
+        result.error = label + " has " + std::to_string(paramCount) + " parameters; the reference synth needs at least "
                      + std::to_string(fieldCount);
         return false;
     }
@@ -487,7 +487,7 @@ ReadResult read(std::span<const std::uint8_t> bytes, const Zlib& zlib)
 
     if (pluginId != "syl1")
     {
-        result.error = "file belongs to another plugin (id '" + pluginId + "'), not Sylenth1";
+        result.error = "file belongs to another plugin (id '" + pluginId + "'), not the reference synth";
         return result;
     }
     if (static_cast<std::uint64_t>(byteSize) + 8u != bytes.size())
@@ -661,7 +661,7 @@ ContainerInfo infoForSources(const std::vector<ContainerInfo>& sources, Containe
     ContainerInfo info;
     info.kind = kind;
     if (sources.empty())
-        return info; // 3045 compressed with 244 fields: what Sylenth1 3.x writes
+        return info; // 3045 compressed with 244 fields: what the reference synth 3.x writes
     info.chunkVersion = 0;
     info.fieldsPerProgram = fieldCount;
     info.compressed = false;
@@ -724,4 +724,4 @@ std::vector<std::uint8_t> storedZlib(std::span<const std::uint8_t> data)
         out.push_back(std::uint8_t(checksum >> shift));
     return out;
 }
-} // namespace synth::sylenth
+} // namespace synth::legacy

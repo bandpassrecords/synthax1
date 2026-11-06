@@ -55,12 +55,12 @@ public:
     bool deleteCurrentProgram(juce::String& message);
     bool loadProgramBank(const juce::File& file, juce::String& message);
     bool saveProgramBank(const juce::File& file, bool overwrite, juce::String& message);
-    // Sylenth1 interop. A Sylenth1 bank has 512 slots, like this processor's four sub-banks,
+    // The reference synth interop. A the reference synth bank has 512 slots, like this processor's four sub-banks,
     // so .fxb replaces all programs slot for slot; .fxp replaces the current program.
-    // Export writes the chosen programs, in order, as a Sylenth1 bank (Init-padded to 512).
-    bool importSylenthFile(const juce::File& file, juce::String& message);
-    bool exportSylenthBank(const std::vector<int>& programIndices, const juce::File& file, bool overwrite, juce::String& message);
-    bool isSylenthExportable(int index) const;
+    // Export writes the chosen programs, in order, as a the reference synth bank (Init-padded to 512).
+    bool importLegacyFile(const juce::File& file, juce::String& message);
+    bool exportLegacyBank(const std::vector<int>& programIndices, const juce::File& file, bool overwrite, juce::String& message);
+    bool isLegacyExportable(int index) const;
     int getSelectedPart() const noexcept { return selectedPart.load(std::memory_order_acquire); }
     void setSelectedPart(int part) noexcept { selectedPart.store(std::clamp(part, 0, 1), std::memory_order_release); }
     float getEffectiveParameterValue(const juce::String& parameterId) const noexcept;
@@ -127,7 +127,7 @@ public:
     std::optional<PresetListItem> getPresetListItemForFile(const juce::File& file) const;
     juce::File getUserPresetDirectory() const;
     bool loadPresetFile(const juce::File& file, juce::String& message);
-    // Loads one entry of the preset library: a Synthax1 preset file or one program of a Sylenth1 bank.
+    // Loads one entry of the preset library: a Synthax1 preset file or one program of a the reference synth bank.
     bool loadLibraryEntry(const std::filesystem::path& file, synth::LibraryKind kind, int programIndex, juce::String& message);
 
     // The current sound, so the preset browser can audition presets and put the original back.

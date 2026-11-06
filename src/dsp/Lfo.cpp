@@ -81,7 +81,7 @@ float Lfo::process() noexcept
     if (phase >= 1.0f)
         phase -= std::floor(phase);
 
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/lfoshape): its sample-and-hold and random LFOs draw a new value
+    // MEASURED (the reference synth 3.0.7.3, sweeps/lfoshape): its sample-and-hold and random LFOs draw a new value
     // twice per cycle, on both square-wave edges. Random glides to each new value (cosine) instead of
     // stepping; it is not audio-rate noise.
     const auto crossed = phase < previousPhase || (previousPhase < 0.5f && phase >= 0.5f);

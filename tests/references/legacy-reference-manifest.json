@@ -6,7 +6,7 @@
       "id": "single-oscillator-dry",
       "reference": null,
       "candidate": "../../build/reports/reference/single-oscillator-dry.wav",
-      "source": {"product": "Sylenth1", "capture_origin": "original_plugin", "captured_by": null, "sha256": null},
+      "source": {"product": "The reference synth", "capture_origin": "original_plugin", "captured_by": null, "sha256": null},
       "capture_settings": {"sample_rate": 48000, "block_size": 128, "tempo_bpm": 128, "midi_fixture": null, "preset_state": null, "plugin_version": null, "host_version": null},
       "limits": {"max_absolute_difference": null, "rms_difference": null, "approved_by": null, "reason": null}
     },
@@ -20,7 +20,7 @@
       "id": "part-a-main",
       "reference": null,
       "candidate": "../../build/reports/reference/part-a-main.png",
-      "source": {"product": "Sylenth1", "capture_origin": "original_plugin", "captured_by": null, "sha256": null},
+      "source": {"product": "The reference synth", "capture_origin": "original_plugin", "captured_by": null, "sha256": null},
       "branding_masks": []
     },
     {"id": "part-b-main", "reference": null, "candidate": null, "branding_masks": []},

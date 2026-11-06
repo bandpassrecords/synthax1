@@ -1,5 +1,5 @@
-// Generated from FXPSylenth1Preset.bt (Per Ivar Nerseth, rev 1.3).
-// Field order equals the on-disk order of the Sylenth1 chunk and the plugin's VST parameter order.
+// Generated from the public field template (Per Ivar Nerseth, rev 1.3).
+// Field order equals the on-disk order of the the reference synth chunk and the plugin's VST parameter order.
 // X(name, kind): kind is the template type (float = continuous, otherwise an enumerated selector).
 // clang-format off
 X(AmpEnvAAttack, Continuous)

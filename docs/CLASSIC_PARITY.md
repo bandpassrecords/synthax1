@@ -1,10 +1,10 @@
 # Classic Native Conformance
 
-Status: integrated native implementation through an earlier build passes the Debug quality gate, 11/11 Release CTest entries, AU validation, and AU/VST3 saved-set reopen/play in Live 11.3.43, 2026-10-09. Full host qualification, original-reference conformance, and public distribution remain open. An implemented control is not automatically a measured match to Sylenth1.
+Status: integrated native implementation through an earlier build passes the Debug quality gate, 11/11 Release CTest entries, AU validation, and AU/VST3 saved-set reopen/play in Live 11.3.43, 2026-10-09. Full host qualification, original-reference conformance, and public distribution remain open. An implemented control is not automatically a measured match to the reference synth.
 
 ## Reference and Release Scope
 
-The working visual reference is the classic v3.0.2 screenshot at the official Lennar Digital screenshot (kept outside the repository) (908 x 591). The supplied `Sylenth1Manual.pdf` defines controls and signal flow. Its older screenshots must not silently override the selected skin geometry. Source-index images of other skins are research only.
+The working visual reference is a classic-layout screenshot kept outside the repository (908 x 591). The supplied reference manual defines controls and signal flow. Its older screenshots must not silently override the selected skin geometry. Source-index images of other skins are research only.
 
 The release includes native macOS AU, VST3, and a standalone validation application. Browser/Wasm, AI generation, conversational editing, and new modern synthesis features are deferred.
 
@@ -48,7 +48,7 @@ No level substitutes for another. Claims must include the build commit, configur
 
 Before this rebuild, commit `3c33275` built universal bundles and passed 8/9 CTest tests. The patch-recreation failure required an effects tail even for a preset using only distortion/EQ/compression. The original slot-A1 octave parameter did not change rendered WAV bytes. Both findings require durable regression coverage.
 
-The June host records used Live 11.0.12 on Apple Silicon and precede later code changes. They are historical evidence, not release qualification for this rebuild. The source tree had no original-plugin reference-audio fixtures. Standard local AU/VST/VST3 directories contained Synthax1 but no Sylenth1 installation during the audit.
+The June host records used Live 11.0.12 on Apple Silicon and precede later code changes. They are historical evidence, not release qualification for this rebuild. The source tree had no original-plugin reference-audio fixtures. Standard local AU/VST/VST3 directories contained Synthax1 but no the reference synth installation during the audit.
 
 The user subsequently removed the old-patch compatibility requirement. The release uses one native architecture; there is no legacy mode or conversion workflow. Existing user files remain untouched.
 

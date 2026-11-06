@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Build the sound-parity reference set: a Sylenth1 bank whose programs each isolate one
+"""Build the sound-parity reference set: a the reference synth bank whose programs each isolate one
 module, a MIDI file that plays every program in turn, and a manifest saying when each
 program sounds and what it is meant to measure. See docs/SOUND_PARITY.md.
 
-  sylenth_reference_bank.py OUTDIR
+  legacy_reference_bank.py OUTDIR
 
 writes OUTDIR/Synthax1Reference.fxb, Synthax1Reference.mid and Synthax1Reference.json.
 
-Every program starts from Sylenth1's Init (one saw voice on A1, filters bypassed, effects
+Every program starts from the reference synth's Init (one saw voice on A1, filters bypassed, effects
 off, retrigger on), so differences come from the module under test. Times, frequencies and
 rates are chosen in real units and converted with the curves measured for the mapper.
 """
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sylenth_bank as sb  # noqa: E402
+import legacy_bank as sb  # noqa: E402
 
 TEMPO_BPM = 120.0
 SECONDS_PER_BEAT = 60.0 / TEMPO_BPM
@@ -51,7 +51,7 @@ def voices(count: int) -> float:
 
 
 def amount(display: float) -> float:
-    """Mod amount on Sylenth1's -10..10 display scale."""
+    """Mod amount on the reference synth's -10..10 display scale."""
     return 0.5 + display / 20
 
 

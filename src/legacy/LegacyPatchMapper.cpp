@@ -1,4 +1,4 @@
-#include "SylenthPatchMapper.h"
+#include "LegacyPatchMapper.h"
 
 #include <algorithm>
 #include <array>
@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <string_view>
 
-namespace synth::sylenth
+namespace synth::legacy
 {
 namespace
 {
@@ -20,14 +20,13 @@ float exponential(float normalized, float low, float high) noexcept
 }
 
 // ------------------------------------------------------------------ knob curves
-// MEASURED curves come from Per Ivar Nerseth's Sylenth1 measurements
-// (github.com/perivar/AudioVSTToolbox, PresetConverter/Sylenth1Preset.cs and
-// Sylenth1ToZebra2PresetAdapter.cs), reimplemented here; the formulas are fitted to values
-// read off Sylenth1's own display. ESTIMATED curves have no measurement yet and use the
-// template's display range with a conventional shape. docs/SYLENTH_IMPORT.md lists both.
+// MEASURED curves come from Per Ivar Nerseth's measurements of the reference synth
+// (github.com/perivar/AudioVSTToolbox, PresetConverter, the preset class and Zebra2 adapter), reimplemented here; the formulas are fitted to values
+// read off the reference synth's own display. ESTIMATED curves have no measurement yet and use the
+// template's display range with a conventional shape. docs/LEGACY_IMPORT.md lists both.
 namespace curves
 {
-// MEASURED from Sylenth1 3.0.7.3 (research/parity, sweeps/env): stage time against knob
+// MEASURED from the reference synth 3.0.7.3 (research/parity, sweeps/env): stage time against knob
 // value 0, 0.05 .. 1. Attack = time to full level; decay and release = time to fall 40 dB,
 // which is how Synthax1's envelope (src/dsp/Envelope.cpp, same measured shapes) reads them.
 // Measured with the analytic-signal envelope (a short RMS window ripples with the carrier and
@@ -186,7 +185,7 @@ const std::array<const char*, 10> arpModeToSynthax1 { "Up", "Down", "UpDown", "U
 const std::array<const char*, 18> syncLabels { "1/16", "1/8", "1/8D", "1/4", "1/2", "1/32", "1/32T", "1/32D", "1/16T",
                                                "1/16D", "1/8T", "1/4T", "1/4D", "1/2T", "1/2D", "1 bar", "1 barT", "1 barD" };
 
-// Length in beats of "a/b", "a/bT", "a/bD" (Sylenth1) or "1 bar", "1 barT", "1 barD" (Synthax1).
+// Length in beats of "a/b", "a/bT", "a/bD" (the reference synth) or "1 bar", "1 barT", "1 barD" (Synthax1).
 float beatsOf(std::string_view label) noexcept
 {
     float beats = 4.0f;
@@ -243,12 +242,12 @@ public:
     void choose(std::string id, std::string label) { mapped.assignments.push_back({ std::move(id), 0.0f, std::move(label) }); }
     void flag(std::string id, bool value) { set(std::move(id), value ? 1.0f : 0.0f); }
 
-    // Picks Synthax1's closest tempo division to a Sylenth1 one, noting a mismatch.
-    void chooseDivision(std::string id, const char* sylenthLabel, const std::string& what)
+    // Picks Synthax1's closest tempo division to a the reference synth one, noting a mismatch.
+    void chooseDivision(std::string id, const char* legacyLabel, const std::string& what)
     {
-        const auto* synthax1Label = nearestSyncLabel(beatsOf(sylenthLabel));
-        if (!sameLength(synthax1Label, sylenthLabel))
-            approximated(what + " " + sylenthLabel + " played as " + synthax1Label);
+        const auto* synthax1Label = nearestSyncLabel(beatsOf(legacyLabel));
+        if (!sameLength(synthax1Label, legacyLabel))
+            approximated(what + " " + legacyLabel + " played as " + synthax1Label);
         choose(std::move(id), synthax1Label);
     }
 
@@ -330,11 +329,11 @@ void mapOscillators(Builder& b)
     }
 }
 
-// Sylenth1 sums part and Filter Control cutoffs in the normalized domain (see curves).
+// The reference synth sums part and Filter Control cutoffs in the normalized domain (see curves).
 // Synthax1 adds a shared semitone offset to each part cutoff, so the shared offset carries
 // the control knob and each part cutoff is whatever makes the sum exact.
 constexpr float semitonesPerUnit = 12.0f / 0.69314718f * 10.152717f;        // d(semitones)/d(normalized)
-// The Filter Control knob adds nothing at its centre (5), as on Sylenth1; the part knob alone then spans
+// The Filter Control knob adds nothing at its centre (5), as on the reference synth; the part knob alone then spans
 // 0 to 176 semitones, which the filter clips at 136 (about 20 kHz), so a part knob above ~7.5 does nothing
 // unless the control is turned down, exactly as on the original.
 constexpr float neutralControl = 0.5f;
@@ -346,15 +345,15 @@ float filterControlOffsetSemitones(float control) noexcept
     return std::clamp(semitonesPerUnit * (clamp01(control) - neutralControl), -controlCutoffMaxSemitones, controlCutoffMaxSemitones);
 }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/filter, 24 dB lowpass, resonance 8): Sylenth1's resonance
+// MEASURED (the reference synth 3.0.7.3, sweeps/filter, 24 dB lowpass, resonance 8): the reference synth's resonance
 // peak sits 1.79 semitones below the nominal cutoff of the formula above, while Synthax1's
 // zero-delay-feedback ladder peaks near its cutoff. Mean over 31 points between 80 Hz and 10 kHz.
-constexpr float sylenthPeakOffsetSemitones = -1.79f;
+constexpr float legacyPeakOffsetSemitones = -1.79f;
 
 float targetSemitones(const Builder& b, F cutoff) noexcept
 {
     return hzToCutoffSemitones(curves::combinedFilterHz(b.raw(cutoff), b.raw(F::FilterCtlCutoff)))
-         + sylenthPeakOffsetSemitones;
+         + legacyPeakOffsetSemitones;
 }
 
 // The shared offset is free as long as part + offset reproduces each active filter's cutoff,
@@ -380,7 +379,7 @@ void mapPartFilter(Builder& b, int part, F cutoff, F drive, F input, F reso, F t
 {
     const auto prefix = "layer." + std::to_string(part) + ".filter.";
     const auto filterType = b.index(type, 4); // Bypass, Lowpass, Bandpass, Highpass
-    // MEASURED (Sylenth1 3.0.7.3, sweeps): stored 0 = 24 dB/octave, 1 = 12 dB/octave (FILTERDB in the
+    // MEASURED (the reference synth 3.0.7.3, sweeps): stored 0 = 24 dB/octave, 1 = 12 dB/octave (FILTERDB in the
     // reference code; the template comment has it the other way round).
     const auto steep = !b.on(slope);
     static constexpr std::array<const char*, 3> letters { "L", "B", "H" };
@@ -416,7 +415,7 @@ void mapFilters(Builder& b)
 
 void mapEnvelope(Builder& b, const std::string& prefix, F attack, F decay, F release, F sustain)
 {
-    // Sylenth1's stages reach ~20 s; Synthax1's envelope times go to 30 s.
+    // The reference synth's stages reach ~20 s; Synthax1's envelope times go to 30 s.
     b.set(prefix + "attack_ms", curves::attackMs(b.raw(attack)));
     b.set(prefix + "decay_ms", curves::decayMs(b.raw(decay)));
     b.set(prefix + "sustain", b.raw(sustain));
@@ -510,7 +509,7 @@ void mapVoiceAndGlobal(Builder& b, bool synced)
     // Init shows Polyphony 3 and Voices 0/3 for a stored 0.1875 (3/16): the knob reads raw * 16, 1 to 16.
     const auto polyphony = std::clamp(static_cast<int>(b.raw(F::Polyphony) * 16.0f + 1.0e-4f), 1, 16);
     b.set("voice.polyphony", static_cast<float>(polyphony));
-    // MEASURED (Sylenth1 3.0.7.3, programs with Mono Legato on and Polyphony 3-4): Mono Legato is a mode
+    // MEASURED (the reference synth 3.0.7.3, programs with Mono Legato on and Polyphony 3-4): Mono Legato is a mode
     // button that makes the instrument monophonic (last note wins) whatever the polyphony knob says.
     if (b.on(F::MonoLegato))
         b.choose("voice.mode", "MonoLegato");
@@ -520,10 +519,10 @@ void mapVoiceAndGlobal(Builder& b, bool synced)
     b.set("voice.glide_ms", curves::glideMs(b.raw(F::PortaTime)));
     b.set("voice.pitch_bend_range", static_cast<float>(1 + b.index(F::PitchBendRange, 24)));
     b.flag("global.sync", synced);
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/wheel): the mod wheel position stored in the preset is a live source
+    // MEASURED (the reference synth 3.0.7.3, sweeps/wheel): the mod wheel position stored in the preset is a live source
     // value when it loads. Carried by the import as a program property, not a registered parameter.
     b.set("performance.mod_wheel", b.raw(F::ModWheel));
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/level, 63 points): Main Volume, Mix and oscillator
+    // MEASURED (the reference synth 3.0.7.3, sweeps/level, 63 points): Main Volume, Mix and oscillator
     // volume are all linear in gain with identical curves in both synths; Synthax1's output is a
     // constant 12.54 dB hotter at the same settings (11.25 plus the 1.29 dB that the old velocity scaling took off at velocity 100), so that is removed here, once.
     b.set("master.level_db", std::max(-48.0f, curves::levelDb(b.raw(F::MainVolume)) - 12.54f));
@@ -547,7 +546,7 @@ void mapArp(Builder& b, bool synced)
     b.set("arp.octaves", static_cast<float>(1 + b.index(F::ArpOctave, 4)));
     b.set("arp.wrap", static_cast<float>(b.index(F::ArpWrap, 17)));
     const auto* division = divisionAt(arpDivisions, b.raw(F::ArpTime));
-    b.choose("arp.rate", division); // Synthax1's arp list is Sylenth1's: 1/1 to 1/64
+    b.choose("arp.rate", division); // Synthax1's arp list is the reference synth's: 1/1 to 1/64
     if (!synced) // ESTIMATED: the free-running time is not measured; use the division at 120 BPM
         b.set("arp.time_ms", std::clamp(beatsOf(division) * 500.0f, 1.0f, 6000.0f));
 
@@ -578,7 +577,7 @@ void mapEffects(Builder& b, bool synced)
     b.set("fx.phaser_center_hz", curves::phaserHz(b.raw(F::PhaserCenterFreq)));
     b.set("fx.phaser_depth", b.raw(F::PhaserLFOGain));
     b.set("fx.phaser_spread", b.raw(F::PhaserSpread));
-    // Sylenth1's L/R Offset knob is bipolar (-10..10) with its centre meaning "none"; its output is
+    // The reference synth's L/R Offset knob is bipolar (-10..10) with its centre meaning "none"; its output is
     // fully mono-correlated there (measured L/R correlation 1.00). Synthax1's offset is 0..1, so use the
     // distance from the centre.
     b.set("fx.phaser_lr_offset", std::abs(bipolar(b.raw(F::PhaserLROffset))));
@@ -648,7 +647,7 @@ void mapEffects(Builder& b, bool synced)
     b.set("fx.compressor_attack_ms", curves::compAttackMs(b.raw(F::CompAttack)));
     b.set("fx.compressor_release_ms", curves::compReleaseMs(b.raw(F::CompRelease)));
     b.set("fx.compressor_ratio", curves::compRatio(b.raw(F::CompRatio)));
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/comp, 100:1, 120 points): the compressor sits before Main
+    // MEASURED (the reference synth 3.0.7.3, sweeps/comp, 100:1, 120 points): the compressor sits before Main
     // Volume; above T = -5 - 28 k dB (input RMS of a sine, k = the knob) the output follows
     // T + makeup + (in - T)/ratio, below it the signal gains makeup(k). Synthax1 detects peaks (+3 dB
     // for a sine) before a master gain that is 12.54 dB hotter than the output, so its threshold is
@@ -662,10 +661,10 @@ void mapEffects(Builder& b, bool synced)
     b.audible = audible;
 }
 // ------------------------------------------------------------------ modulation
-// A Sylenth1 destination becomes one visible Synthax1 route; where it covers several
+// A the reference synth destination becomes one visible Synthax1 route; where it covers several
 // Synthax1 targets, the remaining ones get hidden physical depths (transmod.N.native.*),
 // which the engine sums with the visible routes.
-// maximumDepth: the depth in destination units at Sylenth1's +10. catalogMax: the destination's range in
+// maximumDepth: the depth in destination units at the reference synth's +10. catalogMax: the destination's range in
 // Synthax1's catalogue when that is larger (0 = the same); the visible route amount is a fraction of it.
 struct Target { const char* routeLabel; const char* nativeId; float maximumDepth; float catalogMax = 0.0f; };
 struct Destination { std::vector<Target> targets; };
@@ -735,24 +734,24 @@ void mapModulation(Builder& b)
         {
             const auto routePrefix = prefix + "route." + std::to_string(route + 1) + ".";
             const auto destination = static_cast<std::size_t>(b.index(routes[route].first, modDestinationSteps));
-            const auto sylenthAmount = bipolar(b.raw(routes[route].second));
+            const auto legacyAmount = bipolar(b.raw(routes[route].second));
             const auto& table = destinationTable();
             if (destination == 0 || destination >= table.size())
             {
                 b.choose(routePrefix + "destination", "None");
-                if (destination != 0 && sylenthAmount != 0.0f)
+                if (destination != 0 && legacyAmount != 0.0f)
                     b.dropped("Mod slot " + std::to_string(slot.number) + " destination " + modDestinations[destination]
                               + " has no Synthax1 equivalent");
                 continue;
             }
 
             const auto& targets = table[destination].targets;
-            auto amount = sylenthAmount;
-            if (destination >= 4 && destination <= 6) // Pitch A/B/AB: Sylenth1 full scale is 120 semitones
+            auto amount = legacyAmount;
+            if (destination >= 4 && destination <= 6) // Pitch A/B/AB: the reference synth full scale is 120 semitones
             {
                 // MEASURED (sweeps/lfoshape): an LFO moves pitch half as far as an envelope at the same amount.
                 const auto fromLfo = std::string_view(source).find("LFO") != std::string_view::npos;
-                amount = sylenthAmount * (fromLfo ? 0.5f : 1.0f) * curves::pitchModSemitonesAtFullScale / targets.front().maximumDepth;
+                amount = legacyAmount * (fromLfo ? 0.5f : 1.0f) * curves::pitchModSemitonesAtFullScale / targets.front().maximumDepth;
                 if (std::abs(amount) > 1.0f)
                     b.approximated("Mod slot " + std::to_string(slot.number) + " " + modDestinations[destination]
                                    + " depth exceeds Synthax1's 120 semitones and was clamped");
@@ -760,9 +759,9 @@ void mapModulation(Builder& b)
             }
             // MEASURED (sweeps/lfocut): an LFO swings the cutoff about half as far as an envelope does at the same amount.
             if (destination >= 13 && destination <= 15 && std::string_view(source).find("LFO") != std::string_view::npos)
-                amount = sylenthAmount * 0.52f;
+                amount = legacyAmount * 0.52f;
             if (targets.front().catalogMax > 0.0f)
-                amount = sylenthAmount * targets.front().maximumDepth / targets.front().catalogMax;
+                amount = legacyAmount * targets.front().maximumDepth / targets.front().catalogMax;
             b.choose(routePrefix + "destination", targets.front().routeLabel);
             b.set(routePrefix + "amount", amount);
             for (std::size_t extra = 1; extra < targets.size(); ++extra)
@@ -807,7 +806,7 @@ int selectorIndex(float normalized, int choiceCount) noexcept
 {
     if (choiceCount <= 1)
         return 0;
-    // MEASURED: Sylenth1 switches at multiples of 1/count (fine sweeps of octave and arp transpose).
+    // MEASURED: the reference synth switches at multiples of 1/count (fine sweeps of octave and arp transpose).
     return std::min(choiceCount - 1, static_cast<int>(clamp01(normalized) * static_cast<float>(choiceCount) + 1e-4f));
 }
 
@@ -816,4 +815,4 @@ const std::vector<std::string>& lfoWaveLabels() { return lfoWaves; }
 const std::vector<std::string>& modSourceLabels() { return modSources; }
 const std::vector<std::string>& modDestinationLabels() { return modDestinations; }
 const std::vector<std::string>& arpModeLabels() { return arpModes; }
-} // namespace synth::sylenth
+} // namespace synth::legacy

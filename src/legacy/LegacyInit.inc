@@ -1,4 +1,4 @@
-// Sylenth1 Init program: the 242 base fields, normalized, in file order.
+// The reference synth Init program: the 242 base fields, normalized, in file order.
 // The most common "Init" across real banks (11505 occurrences, chunk versions 2200..3045).
 // clang-format off
     0.005f, 0.0f, 0.01f, 1.0f, 0.005f, 0.0f,

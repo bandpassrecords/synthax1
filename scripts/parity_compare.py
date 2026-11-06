@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Rank the reference programs by how far Synthax1 is from Sylenth1 (docs/SOUND_PARITY.md).
+"""Rank the reference programs by how far Synthax1 is from the reference synth (docs/SOUND_PARITY.md).
 
-  parity_compare.py SYLENTH_DIR SYNTHAX1_DIR MANIFEST.json [--worst N]
+  parity_compare.py LEGACY_DIR SYNTHAX1_DIR MANIFEST.json [--worst N]
 
 Per program, on each program's loudest steady note: level difference in dB, and the spectral
 distance: mean absolute dB difference between the two 1/6-octave-smoothed spectra from 60 Hz
@@ -49,12 +49,12 @@ def smoothed_spectrum(x: np.ndarray, rate: int) -> tuple[np.ndarray, np.ndarray]
 
 
 def main() -> None:
-    sylenth, synthax1, manifest_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+    legacy, synthax1, manifest_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
     worst = int(sys.argv[sys.argv.index("--worst") + 1]) if "--worst" in sys.argv else 0
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     rows = []
     for program in manifest["programs"]:
-        rate, a = steady_segment(sylenth, program)
+        rate, a = steady_segment(legacy, program)
         _, b = steady_segment(synthax1, program)
         level_a = 20 * np.log10(np.sqrt((a ** 2).mean()) + 1e-12)
         level_b = 20 * np.log10(np.sqrt((b ** 2).mean()) + 1e-12)

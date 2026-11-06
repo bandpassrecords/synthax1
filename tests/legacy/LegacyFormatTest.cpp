@@ -1,8 +1,8 @@
-// JUCE-free tests for the Sylenth1 .fxp/.fxb container layer.
+// JUCE-free tests for the the reference synth .fxp/.fxb container layer.
 // Optional argument: a directory of real .fxp/.fxb files; each must parse, and writing it
 // back must reproduce it (byte for byte when uncompressed, value for value when compressed).
 
-#include "../../src/sylenth/SylenthFormat.h"
+#include "../../src/legacy/LegacyFormat.h"
 
 #include <cstdio>
 #include <cstring>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-using namespace synth::sylenth;
+using namespace synth::legacy;
 
 namespace
 {
@@ -245,7 +245,7 @@ int checkDirectory(const std::filesystem::path& directory)
         const auto label = entry.path().filename().string();
         if (!result.ok() && sawHuffmanStream)
         {
-            ++skippedCompressed; // decoded by SylenthImportTest with JUCE's zlib
+            ++skippedCompressed; // decoded by LegacyImportTest with JUCE's zlib
             continue;
         }
         if (!result.ok())
@@ -289,10 +289,10 @@ int main(int argc, char** argv)
     if (argc > 1)
     {
         const auto files = checkDirectory(argv[1]);
-        std::printf("checked %d real file(s); %d zlib-compressed one(s) left to SylenthImportTest\n",
+        std::printf("checked %d real file(s); %d zlib-compressed one(s) left to LegacyImportTest\n",
                     files - skippedCompressed, skippedCompressed);
     }
 
-    std::printf(failures == 0 ? "SylenthFormatTest: all passed\n" : "SylenthFormatTest: %d failure(s)\n", failures);
+    std::printf(failures == 0 ? "LegacyFormatTest: all passed\n" : "LegacyFormatTest: %d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

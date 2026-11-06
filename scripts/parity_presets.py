@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build an ablation set from real Sylenth1 presets (docs/SOUND_PARITY.md).
+"""Build an ablation set from real the reference synth presets (docs/SOUND_PARITY.md).
 
   parity_presets.py OUTDIR BANK.fxb [--count N] [--only 1,5,9]
 
 Picks N presets spread across the bank (or the 1-based indices of --only) and writes, for each,
-cumulative variants, so the point where Synthax1 and Sylenth1 converge shows which module is
+cumulative variants, so the point where Synthax1 and the reference synth converge shows which module is
 responsible for the remaining difference:
 
   full      the preset as it is
@@ -15,7 +15,7 @@ responsible for the remaining difference:
   onevoice  + one oscillator voice, centred and without detune (what is left: the bare oscillators)
 
 Output: OUTDIR/presets.fxb, presets.mid and presets.json (the same manifest format the other parity
-tools read). Render with SylenthRenderHost and Synthax1Render --sylenth-bank, compare with
+tools read). Render with LegacyRenderHost and Synthax1Render --legacy-bank, compare with
 parity_compare.py; its "module" column is the variant, so its per-module mean is the ablation table.
 """
 
@@ -26,9 +26,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sylenth_bank as sb  # noqa: E402
-import sylenth_reference_bank as ref  # noqa: E402
-from sylenth_reference_bank import Note, Program  # noqa: E402
+import legacy_bank as sb  # noqa: E402
+import legacy_reference_bank as ref  # noqa: E402
+from legacy_reference_bank import Note, Program  # noqa: E402
 
 NAMES = sb.field_names()
 FX_SWITCHES = ["XSwChorusOnOff", "XSwCompOnOff", "XSwDelayOnOff", "XSwDistOnOff", "XSwEQOnOff", "XSwPhaserOnOff", "XSwReverbOnOff"]

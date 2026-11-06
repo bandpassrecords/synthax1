@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Inspect Sylenth1 .fxp/.fxb files and assemble new banks from existing presets.
+"""Inspect the reference synth .fxp/.fxb files and assemble new banks from existing presets.
 
-Mirrors src/sylenth/SylenthFormat.cpp. Values stay in Sylenth1's normalized form, so built
-banks load in Sylenth1 itself and in Synthax1.
+Mirrors src/legacy/LegacyFormat.cpp. Values stay in the reference synth's normalized form, so built
+banks load in the reference synth itself and in Synthax1.
 
-  sylenth_bank.py info    FILE...                         container, layout, program count
-  sylenth_bank.py list    FILE... [--all]                 numbered program names (Init slots hidden)
-  sylenth_bank.py dump    FILE [--program N]              raw normalized field values
-  sylenth_bank.py extract BANK.fxb OUTDIR [--all]         one .fxp per program
-  sylenth_bank.py build   OUT.fxb SOURCE... [--no-pad] [--force]
+  legacy_bank.py info    FILE...                         container, layout, program count
+  legacy_bank.py list    FILE... [--all]                 numbered program names (Init slots hidden)
+  legacy_bank.py dump    FILE [--program N]              raw normalized field values
+  legacy_bank.py extract BANK.fxb OUTDIR [--all]         one .fxp per program
+  legacy_bank.py build   OUT.fxb SOURCE... [--no-pad] [--force]
                                                           new bank from selected programs,
                                                           filled to 512 slots with Init
 
@@ -40,13 +40,13 @@ NAME_BYTES = 36
 HEADER_NAME_BYTES = 28
 PROGRAMS_PER_BANK = 512
 MAX_BYTES = 64 << 20
-SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "sylenth"
+SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "legacy"
 
 
 def field_names() -> list[str]:
-    names = re.findall(r"^X\((\w+),", (SOURCE_DIR / "SylenthFields.inc").read_text(encoding="utf-8"), re.M)
+    names = re.findall(r"^X\((\w+),", (SOURCE_DIR / "LegacyFields.inc").read_text(encoding="utf-8"), re.M)
     if len(names) != BASE_FIELDS:
-        raise SystemExit(f"SylenthFields.inc lists {len(names)} fields, expected {BASE_FIELDS}")
+        raise SystemExit(f"LegacyFields.inc lists {len(names)} fields, expected {BASE_FIELDS}")
     return names
 
 
@@ -58,10 +58,10 @@ class Patch:
 
 
 def init_patch() -> Patch:
-    text = (SOURCE_DIR / "SylenthInit.inc").read_text(encoding="utf-8")
+    text = (SOURCE_DIR / "LegacyInit.inc").read_text(encoding="utf-8")
     values = [float(v) for v in re.findall(r"(-?[0-9.]+(?:e-?\d+)?)f", text)]
     if len(values) != BASE_FIELDS:
-        raise SystemExit(f"SylenthInit.inc holds {len(values)} values, expected {BASE_FIELDS}")
+        raise SystemExit(f"LegacyInit.inc holds {len(values)} values, expected {BASE_FIELDS}")
     return Patch("Init", values, [0.0, 0.0])
 
 
@@ -101,7 +101,7 @@ def plausible(chunk: bytes) -> bool:
 
 def expand(chunk: bytes, info: Info) -> bytes:
     if len(chunk) < 20 or chunk[:4] != b"1lys":
-        raise FormatError("chunk does not start with the Sylenth1 signature")
+        raise FormatError("chunk does not start with the the reference synth signature")
     info.compressed = False
     if plausible(chunk):
         return chunk
@@ -109,9 +109,9 @@ def expand(chunk: bytes, info: Info) -> bytes:
     try:
         inner = inflater.decompress(chunk[8:], MAX_BYTES)
     except zlib.error as error:
-        raise FormatError(f"Sylenth1 chunk header is inconsistent and the body is not zlib ({error})") from None
+        raise FormatError(f"The reference synth chunk header is inconsistent and the body is not zlib ({error})") from None
     if inflater.unconsumed_tail or not inflater.eof or not plausible(inner):
-        raise FormatError("compressed Sylenth1 chunk is incomplete, too large or inconsistent")
+        raise FormatError("compressed the reference synth chunk is incomplete, too large or inconsistent")
     info.compressed = True
     return inner
 
@@ -135,7 +135,7 @@ def read(data: bytes) -> Document:
         raise FormatError("not an .fxp/.fxb file")
     _, magic, fxp_version, plugin_id, fx_version, _count = struct.unpack_from(">I4si4sii", data, 4)
     if plugin_id != b"syl1":
-        raise FormatError(f"file belongs to plugin '{plugin_id.decode('latin-1')}', not Sylenth1")
+        raise FormatError(f"file belongs to plugin '{plugin_id.decode('latin-1')}', not the reference synth")
     info = Info(kind=magic.decode("latin-1"), fxp_version=fxp_version, fx_version=fx_version)
     if magic == b"FBCh":
         if fxp_version >= 2:
@@ -316,7 +316,7 @@ def command_build(args) -> None:
     if not patches:
         raise SystemExit("selection is empty")
     if len(patches) > PROGRAMS_PER_BANK:
-        raise SystemExit(f"{len(patches)} programs selected; a Sylenth1 bank holds {PROGRAMS_PER_BANK}")
+        raise SystemExit(f"{len(patches)} programs selected; a the reference synth bank holds {PROGRAMS_PER_BANK}")
     used = len(patches)
     if not args.no_pad:
         patches += [init_patch() for _ in range(PROGRAMS_PER_BANK - len(patches))]

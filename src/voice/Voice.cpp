@@ -460,9 +460,9 @@ StereoFrame Voice::renderNative(const SynthParameters& parameters, const LfoFram
         input.left = partFilters[part][0].processPrepared(input.left, note, settings, cutoffModulation);
         input.right = partFilters[part][1].processPrepared(input.right, note, settings, cutoffModulation);
         const auto layerOffset = static_cast<std::size_t>(26 + partIndex * 2);
-        // Part level modulation is added to the part's linear gain, as Sylenth1 adds it to the Mix knob
+        // Part level modulation is added to the part's linear gain, as the reference synth adds it to the Mix knob
         // (the gate recipe in its manual sets Mix to 0 and lets Step Velocity supply the whole level).
-        // MEASURED (Sylenth1 3.0.7.3, sweeps/lfodepth, sweeps/velocity): +-0.5 of gain at full scale for
+        // MEASURED (the reference synth 3.0.7.3, sweeps/lfodepth, sweeps/velocity): +-0.5 of gain at full scale for
         // Volume, 1.33 for Mix; note velocity itself does not change the level.
         const auto levelDb = layer.levelDb + lastTransModSums.ampLevelDb;
         const auto baseGain = levelDb <= -48.0f ? 0.0f : decibelsToGain(levelDb);

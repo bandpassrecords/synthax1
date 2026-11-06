@@ -141,7 +141,7 @@ class ReferenceComparisonTest(unittest.TestCase):
     def test_missing_reference_manifest_fails_both_commands(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = ROOT / 'tests/references/sylenth-reference-manifest.json'
+            manifest = ROOT / 'tests/references/legacy-reference-manifest.json'
             commands = [
                 [sys.executable, str(ROOT / 'scripts/compare-reference-images.py'), '--manifest', str(manifest), '--output-dir', str(folder / 'images')],
                 [sys.executable, str(ROOT / 'scripts/compare-reference-audio.py'), '--manifest', str(manifest), '--output', str(folder / 'audio.json')],

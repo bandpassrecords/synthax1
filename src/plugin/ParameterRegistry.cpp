@@ -2,8 +2,8 @@
 
 #include "../dsp/SynthParameters.h"
 #include "../modulation/ModulationRouteModel.h"
-#include "../sylenth/SylenthFormat.h"
-#include "../sylenth/SylenthPatchMapper.h"
+#include "../legacy/LegacyFormat.h"
+#include "../legacy/LegacyPatchMapper.h"
 
 #include <algorithm>
 #include <cmath>
@@ -428,12 +428,12 @@ std::vector<ParameterSpec> buildSpecs()
                 }),
                 specs.end());
 
-    // The start sound is Sylenth1's Init program: every parameter it sets starts at (and Ctrl+click
+    // The start sound is the reference synth's Init program: every parameter it sets starts at (and Ctrl+click
     // resets to) the value Init has. Presets still load on top of the plain defaults.
     std::unordered_map<std::string, std::size_t> position;
     for (std::size_t index = 0; index < specs.size(); ++index)
         position.emplace(specs[index].id, index);
-    for (const auto& assignment : sylenth::mapPatch(sylenth::initPatch()).assignments)
+    for (const auto& assignment : legacy::mapPatch(legacy::initPatch()).assignments)
     {
         const auto found = position.find(assignment.parameterId);
         if (found == position.end())

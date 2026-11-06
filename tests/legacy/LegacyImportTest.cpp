@@ -1,4 +1,4 @@
-// Sylenth1 import against the live parameter registry (needs JUCE).
+// The reference synth import against the live parameter registry (needs JUCE).
 //
 //  1. Every parameter ID the mapper emits must be registered and every choice label must be
 //     one of that parameter's choices, over many pseudo-random patches.
@@ -9,7 +9,7 @@
 #include "../../src/plugin/ParameterHistory.h"
 #include "../../src/plugin/ParameterRegistry.h"
 #include "../../src/presets/PresetLibrary.h"
-#include "../../src/sylenth/SylenthImport.h"
+#include "../../src/legacy/LegacyImport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -39,7 +39,7 @@ class HostlessProcessor final : public juce::AudioProcessor
 public:
     HostlessProcessor() : parameters(*this, nullptr, "SYNTHAX1_STATE", createParameterLayout()) {}
 
-    const juce::String getName() const override { return "SylenthImportTest"; }
+    const juce::String getName() const override { return "LegacyImportTest"; }
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
@@ -66,12 +66,12 @@ void checkRegistryCoverage()
     std::uniform_real_distribution<float> unit(0.0f, 1.0f);
     for (int round = 0; round < 2000; ++round)
     {
-        sylenth::Patch patch;
+        legacy::Patch patch;
         for (auto& value : patch.values)
             value = round == 0 ? 0.0f : round == 1 ? 1.0f : unit(rng);
         patch.extraFields = { unit(rng), unit(rng) };
 
-        for (const auto& assignment : sylenth::mapPatch(patch).assignments)
+        for (const auto& assignment : legacy::mapPatch(patch).assignments)
         {
             if (assignment.parameterId == "performance.mod_wheel")
                 continue; // carried as a program property, not a registry parameter
@@ -212,7 +212,7 @@ void checkRealFiles(HostlessProcessor& processor, const std::filesystem::path& d
         const auto path = std::string(utf8.begin(), utf8.end());
         const auto file = juce::File(juce::String::fromUTF8(path.c_str()));
         const auto label = file.getFileName().toStdString();
-        const auto imported = sylenth::importFile(processor.parameters, file);
+        const auto imported = legacy::importFile(processor.parameters, file);
         if (!imported.ok)
         {
             if (!imported.message.contains("another plugin")) // other synths' files may share the folder
@@ -228,7 +228,7 @@ void checkRealFiles(HostlessProcessor& processor, const std::filesystem::path& d
             ++programs;
             if (!program.rejected.empty())
                 fail(label + " / " + program.name.toStdString() + ": registry rejected " + program.rejected.front());
-            if (!sylenth::isUneditedImport(program.state))
+            if (!legacy::isUneditedImport(program.state))
                 fail(label + " / " + program.name.toStdString() + ": a fresh import does not count as unedited");
             states.push_back(program.state);
             names.push_back(program.name);
@@ -236,13 +236,13 @@ void checkRealFiles(HostlessProcessor& processor, const std::filesystem::path& d
 
         std::vector<std::uint8_t> bytes;
         juce::String error;
-        if (!sylenth::buildBank(states, names, bytes, error))
+        if (!legacy::buildBank(states, names, bytes, error))
         {
             fail(label + ": export refused: " + error.toStdString());
             continue;
         }
-        const auto original = sylenth::readFile(path, sylenth::juceZlib());
-        const auto exported = sylenth::read(bytes, sylenth::juceZlib());
+        const auto original = legacy::readFile(path, legacy::juceZlib());
+        const auto exported = legacy::read(bytes, legacy::juceZlib());
         if (!original.ok() || !exported.ok())
         {
             fail(label + ": re-read failed: " + original.error + exported.error);
@@ -272,6 +272,6 @@ int main(int argc, char** argv)
         HostlessProcessor processor;
         checkRealFiles(processor, argv[1]);
     }
-    std::printf(failures == 0 ? "SylenthImportTest: all passed\n" : "SylenthImportTest: %d failure(s)\n", failures);
+    std::printf(failures == 0 ? "LegacyImportTest: all passed\n" : "LegacyImportTest: %d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

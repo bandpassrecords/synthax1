@@ -1,6 +1,6 @@
 # Synthax1 Agent Guide
 
-Synthax1 is a C++20/JUCE instrument for macOS AU, VST3, and Standalone. The active release recreates the classic Sylenth1 control surface with owned code and assets. Use simple solutions and plain language.
+Synthax1 is a C++20/JUCE instrument for macOS AU, VST3, and Standalone. The active release recreates the classic the reference synth control surface with owned code and assets. Use simple solutions and plain language.
 
 ## Start here
 
@@ -103,7 +103,7 @@ Identify the tested revision and actual binary. Record host failures with Ableto
 
 ## Evidence and contribution discipline
 
-Owned implementation and passing local tests do not prove Sylenth1 audio or pixel equivalence. Required original-reference checks must fail if captures are missing. Never substitute Synthax1 renders for original-plugin evidence or invent a successful reproduction.
+Owned implementation and passing local tests do not prove the reference synth audio or pixel equivalence. Required original-reference checks must fail if captures are missing. Never substitute Synthax1 renders for original-plugin evidence or invent a successful reproduction.
 
 Use owned or explicitly licensed shipped assets and presets. Vendor screenshots/manuals are research references, not runtime backplates, logos, or factory content. Do not inspect/disassemble proprietary binaries or bypass licensing.
 

@@ -3,7 +3,7 @@
 #include "PluginEditor.h"
 #include "../presets/PresetManager.h"
 #include "../presets/PresetValidator.h"
-#include "../sylenth/SylenthImport.h"
+#include "../legacy/LegacyImport.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1034,13 +1034,13 @@ bool SynthAudioProcessor::loadLibraryEntry(const std::filesystem::path& path, sy
     if (kind == synth::LibraryKind::Synthax1Preset)
         return loadPresetFile(file, message);
 
-    const auto bank = synth::sylenth::readFile(file.getFullPathName().toStdString(), synth::sylenth::juceZlib());
+    const auto bank = synth::legacy::readFile(file.getFullPathName().toStdString(), synth::legacy::juceZlib());
     if (!bank.ok() || programIndex < 0 || static_cast<std::size_t>(programIndex) >= bank.document->patches.size())
     {
         message = "Could not read " + file.getFileName() + " program " + juce::String(programIndex + 1);
         return false;
     }
-    const auto program = synth::sylenth::buildProgram(parameters, bank.document->patches[static_cast<std::size_t>(programIndex)],
+    const auto program = synth::legacy::buildProgram(parameters, bank.document->patches[static_cast<std::size_t>(programIndex)],
                                                       bank.document->info);
     const juce::ScopedLock operationLock(programLock);
     return applyPreparedPresetState(program.state, synth::fingerprintPresetState(program.state), "Loaded " + program.name, program.name,
@@ -1698,10 +1698,10 @@ bool SynthAudioProcessor::applyPreparedPresetState(const juce::ValueTree& state,
     message = status;
     setPresetMetadata(presetName, message, presetFilePath);
     setPresetBaselineFingerprint(baselineFingerprint);
-    // A program imported from Sylenth1 carries the mod wheel position it was saved with, which
-    // Sylenth1 treats as the wheel's value on load.
-    if (state.hasProperty("sylenth_mod_wheel"))
-        uiRequestedModWheel.store(juce::roundToInt(juce::jlimit(0.0f, 1.0f, static_cast<float>(state.getProperty("sylenth_mod_wheel"))) * 127.0f),
+    // A program imported from the reference synth carries the mod wheel position it was saved with, which
+    // The reference synth treats as the wheel's value on load.
+    if (state.hasProperty("legacy_mod_wheel"))
+        uiRequestedModWheel.store(juce::roundToInt(juce::jlimit(0.0f, 1.0f, static_cast<float>(state.getProperty("legacy_mod_wheel"))) * 127.0f),
                                   std::memory_order_release);
     panicRequested.store(true, std::memory_order_release);
     return true;
@@ -2068,10 +2068,10 @@ bool SynthAudioProcessor::loadProgramBank(const juce::File& file, juce::String& 
 {
     const juce::ScopedLock operationLock(programLock);
     if (file.hasFileExtension("fxb;fxp"))
-        return importSylenthFile(file, message);
+        return importLegacyFile(file, message);
     if (!file.hasFileExtension("Synthax1Bank"))
     {
-        message = "Supported bank formats are .Synthax1Bank and Sylenth1 .fxb/.fxp";
+        message = "Supported bank formats are .Synthax1Bank and the reference synth .fxb/.fxp";
         return false;
     }
     if (file.getSize() > 64 * 1024 * 1024)
@@ -2104,19 +2104,19 @@ bool SynthAudioProcessor::saveProgramBank(const juce::File& file, bool overwrite
     const juce::ScopedLock operationLock(programLock);
     if (file.hasFileExtension("fxb"))
     {
-        // Exports every unedited Sylenth1-sourced program, in slot order.
+        // Exports every unedited the reference synth-sourced program, in slot order.
         std::vector<int> indices;
         for (int index = 0; index < programCount; ++index)
-            if (isSylenthExportable(index))
+            if (isLegacyExportable(index))
                 indices.push_back(index);
-        if (!exportSylenthBank(indices, file, overwrite, message))
+        if (!exportLegacyBank(indices, file, overwrite, message))
             return false;
         if (const auto skipped = programCount - static_cast<int>(indices.size()); skipped > 0)
             message += " (" + juce::String(skipped) + " edited or native programs left out)";
         return true;
     }
     if (file.hasFileExtension("fxp"))
-        return exportSylenthBank({ getCurrentProgram() }, file, overwrite, message);
+        return exportLegacyBank({ getCurrentProgram() }, file, overwrite, message);
     const auto destination = file.hasFileExtension("Synthax1Bank") ? file : file.withFileExtension("Synthax1Bank");
     auto root = std::make_unique<juce::DynamicObject>();
     root->setProperty("fileType", "Synthax1Bank");
@@ -2157,7 +2157,7 @@ bool SynthAudioProcessor::placeImportedPrograms(std::vector<juce::String> names,
     currentProgram.store(first, std::memory_order_release);
     const auto status = message;
     if (!applyPreparedPresetState(selected.state.createCopy(), synth::fingerprintPresetState(selected.baseline),
-                                  "Sylenth1 import", selected.name, {}, message, false))
+                                  "The reference synth import", selected.name, {}, message, false))
         return false;
     message = status;
     if (count < static_cast<int>(states.size()))
@@ -2165,9 +2165,9 @@ bool SynthAudioProcessor::placeImportedPrograms(std::vector<juce::String> names,
     return true;
 }
 
-bool SynthAudioProcessor::importSylenthFile(const juce::File& file, juce::String& message)
+bool SynthAudioProcessor::importLegacyFile(const juce::File& file, juce::String& message)
 {
-    auto imported = synth::sylenth::importFile(parameters, file);
+    auto imported = synth::legacy::importFile(parameters, file);
     if (!imported.ok)
     {
         message = imported.message;
@@ -2185,16 +2185,16 @@ bool SynthAudioProcessor::importSylenthFile(const juce::File& file, juce::String
     return placeImportedPrograms(std::move(names), std::move(states), file.hasFileExtension("fxb"), message);
 }
 
-bool SynthAudioProcessor::isSylenthExportable(int index) const
+bool SynthAudioProcessor::isLegacyExportable(int index) const
 {
     if (index < 0 || index >= programCount)
         return false;
     const juce::ScopedLock lock(programLock);
     const auto& state = programs[static_cast<std::size_t>(index)].state;
-    return state.isValid() && synth::sylenth::isUneditedImport(state);
+    return state.isValid() && synth::legacy::isUneditedImport(state);
 }
 
-bool SynthAudioProcessor::exportSylenthBank(const std::vector<int>& programIndices, const juce::File& file,
+bool SynthAudioProcessor::exportLegacyBank(const std::vector<int>& programIndices, const juce::File& file,
                                             bool overwrite, juce::String& message)
 {
     const juce::ScopedLock operationLock(programLock);
@@ -2217,16 +2217,16 @@ bool SynthAudioProcessor::exportSylenthBank(const std::vector<int>& programIndic
     }
 
     std::vector<std::uint8_t> bytes;
-    if (!synth::sylenth::buildBank(states, names, bytes, message))
+    if (!synth::legacy::buildBank(states, names, bytes, message))
         return false;
     if (file.hasFileExtension("fxp") && states.size() == 1)
     {
         // A single program goes out as a program file, not a one-entry bank.
-        auto source = synth::sylenth::sourceProgram(states.front());
+        auto source = synth::legacy::sourceProgram(states.front());
         source->patch.name = names.front().toStdString();
-        source->info.kind = synth::sylenth::ContainerKind::ChunkProgram;
+        source->info.kind = synth::legacy::ContainerKind::ChunkProgram;
         source->info.future.clear();
-        bytes = synth::sylenth::writeProgram(source->patch, source->info, synth::sylenth::juceZlib());
+        bytes = synth::legacy::writeProgram(source->patch, source->info, synth::legacy::juceZlib());
     }
 
     const auto destination = file.hasFileExtension("fxb;fxp") ? file : file.withFileExtension("fxb");
@@ -2236,7 +2236,7 @@ bool SynthAudioProcessor::exportSylenthBank(const std::vector<int>& programIndic
         return false;
     }
     std::string error;
-    if (!synth::sylenth::writeFile(destination.getFullPathName().toStdString(), bytes, error))
+    if (!synth::legacy::writeFile(destination.getFullPathName().toStdString(), bytes, error))
     {
         message = juce::String(error);
         return false;
@@ -2350,11 +2350,11 @@ void SynthAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     const juce::ScopedLock operationLock(programLock);
     const std::span<const std::uint8_t> bytes { static_cast<const std::uint8_t*>(data),
                                                 static_cast<std::size_t>(std::max(0, sizeInBytes)) };
-    if (synth::sylenth::looksLikeChunk(bytes))
+    if (synth::legacy::looksLikeChunk(bytes))
     {
-        // A host handing over a raw Sylenth1 chunk. Only happens when the plugin is built
-        // with Sylenth1's plugin ID for local experiments; see docs/SYLENTH_IMPORT.md.
-        auto imported = synth::sylenth::importBytes(parameters, bytes);
+        // A host handing over a raw the reference synth chunk. Only happens when the plugin is built
+        // with the reference synth's plugin ID for local experiments; see docs/LEGACY_IMPORT.md.
+        auto imported = synth::legacy::importBytes(parameters, bytes);
         if (!imported.ok)
             return;
         std::vector<juce::String> names;

@@ -32,7 +32,7 @@ struct ParameterSpec
     int auVersionHint = 1;
     std::vector<std::string> choices;
     int defaultChoice = 0;
-    // Sylenth1's Init value for this parameter, when Init sets it: the start value of a new instance and of
+    // The reference synth's Init value for this parameter, when Init sets it: the start value of a new instance and of
     // the Init preset, and what Ctrl+click resets to. Presets load on top of defaultValue, not this.
     bool hasInit = false;
     float initValue = 0.0f;

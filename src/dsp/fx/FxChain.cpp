@@ -25,7 +25,7 @@ float mix(float dry, float wet, float amount) noexcept
     return dry + (wet - dry) * amount;
 }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/reverbfine): decay time (to -60 dB) at Size 0, 0.1 ... 1.0. The curve
+// MEASURED (the reference synth 3.0.7.3, sweeps/reverbfine): decay time (to -60 dB) at Size 0, 0.1 ... 1.0. The curve
 // keeps rising to 0.9 and falls back at full size.
 float reverbDecaySeconds(float size) noexcept
 {
@@ -38,8 +38,8 @@ float reverbDecaySeconds(float size) noexcept
 
 // MEASURED: wet gain against the Dry/Wet knob, relative to full wet (about m^1.9); the dry signal follows
 // a quarter sine.
-// MEASURED: Sylenth1's Damp knob against the loop damping that gives the same tail brightness
-// (sweeps/reverbfine, reverbdamp), and the wet level trim against Size (dB, Sylenth1 minus this loop).
+// MEASURED: the reference synth's Damp knob against the loop damping that gives the same tail brightness
+// (sweeps/reverbfine, reverbdamp), and the wet level trim against Size (dB, the reference synth minus this loop).
 float reverbDampingAmount(float damp) noexcept
 {
     constexpr std::array<float, 7> knob { 0.0f, 0.1f, 0.2f, 0.35f, 0.5f, 0.75f, 1.0f };
@@ -82,7 +82,7 @@ float saturate(float sample, float drive) noexcept
     return softSaturate(sample * gain) / normalizer;
 }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/dist: a sine at two levels, five amounts, fully wet). The Amount knob
+// MEASURED (the reference synth 3.0.7.3, sweeps/dist: a sine at two levels, five amounts, fully wet). The Amount knob
 // is a pre-gain that rises about 50 dB over its travel from -15 dB at 0 (so low amounts are quiet and clean,
 // nothing like the old soft saturator that already added 13 dB at 0.1), into a ceiling at about -17.5 dB.
 // Overdrive rounds that ceiling (tanh), Clip cuts it, Foldback folds the waveform back. Ceilings are in
@@ -714,7 +714,7 @@ FxStereoFrame FxChain::processPhaser(FxStereoFrame input, const FxParameters& pa
     }
     previousPhaserInput = input;
     wet = applyWidth(wet, parameters.phaserWidth);
-    // MEASURED (Sylenth1 3.0.7.3, sweeps/fxnoise): level on noise stays within 0.5 dB of the dry level
+    // MEASURED (the reference synth 3.0.7.3, sweeps/fxnoise): level on noise stays within 0.5 dB of the dry level
     // at mix 0.5, which an equal-power blend gives and a linear one (-3 dB for a correlated wet) does not.
     const auto amount = clampUnit(finiteOrZero(mixStates[1])) * 1.57079632679f;
     return { input.left * std::cos(amount) + wet.left * std::sin(amount),
@@ -758,7 +758,7 @@ FxStereoFrame FxChain::processChorus(FxStereoFrame input, const FxParameters& pa
             const auto secondRight = chorusSecondRight.readInterpolated((smoothedChorusDelay + std::sin(phase + 4.71238898038f) * depth) * scale);
             chorusSecondLeft.write(left + secondLeft * feedback);
             chorusSecondRight.write(right + secondRight * feedback);
-            // 1/sqrt(2) keeps the level of two uncorrelated taps; MEASURED (Sylenth1 3.0.7.3, sweeps/fxnoise):
+            // 1/sqrt(2) keeps the level of two uncorrelated taps; MEASURED (the reference synth 3.0.7.3, sweeps/fxnoise):
             // dual mode at full mix is within 0.1 dB of the dry level on white noise.
             wet.left = 0.70710678f * (firstLeft + secondLeft);
             wet.right = 0.70710678f * (firstRight + secondRight);
@@ -772,7 +772,7 @@ FxStereoFrame FxChain::processChorus(FxStereoFrame input, const FxParameters& pa
     }
     previousChorusInput = input;
     wet = applyWidth(wet, parameters.chorusWidth);
-    // MEASURED: an equal-power blend. Sylenth1 holds the level of white noise within 0.6 dB at every
+    // MEASURED: an equal-power blend. The reference synth holds the level of white noise within 0.6 dB at every
     // mix, and its L/R correlation is 0.50 at mix 0.5 (the dry half is the correlated part).
     const auto amount = clampUnit(finiteOrZero(mixStates[2])) * 1.57079632679f;
     const auto dryGain = std::cos(amount);
@@ -791,7 +791,7 @@ FxStereoFrame FxChain::processEq(FxStereoFrame input, const FxParameters& parame
     if (settings != eqSettings)
     {
         eqSettings = settings;
-        // MEASURED (Sylenth1 3.0.7.3, FX EQ programs): the shelf's half-gain point sits at 1.7 x the
+        // MEASURED (the reference synth 3.0.7.3, FX EQ programs): the shelf's half-gain point sits at 1.7 x the
         // Bass Freq knob and 0.57 x the Treble Freq knob.
         eqShelves[0].setShelf(sampleRate, settings[0] * 1.7f, settings[2], false);
         eqShelves[1].coefficients = eqShelves[0].coefficients;
@@ -904,7 +904,7 @@ FxStereoFrame FxChain::processReverb(FxStereoFrame input, const FxParameters& pa
     reverbPreDelayLeft.write(input.left);
     reverbPreDelayRight.write(input.right);
     const auto damping = reverbDampingAmount(finiteOrZero(parameters.reverbDamp)) * 0.95f;
-    // Fixed short loop lengths (Sylenth1's reverb starts within a few milliseconds whatever the size, and
+    // Fixed short loop lengths (the reference synth's reverb starts within a few milliseconds whatever the size, and
     // linear interpolation inside a feedback loop would darken the tail); the feedback sets the decay time.
     constexpr std::array<float, 8> times {
         0.0113f, 0.0137f, 0.0159f, 0.0181f, 0.0121f, 0.0149f, 0.0167f, 0.0191f

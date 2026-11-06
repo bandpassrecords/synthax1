@@ -1,6 +1,6 @@
 #pragma once
 
-// A searchable catalogue of every preset the user can reach: Synthax1 presets (.Synthax1Preset) and Sylenth1
+// A searchable catalogue of every preset the user can reach: Synthax1 presets (.Synthax1Preset) and the reference synth
 // banks and programs (.fxb, .fxp) found under a list of folders.
 //
 // Built for libraries of hundreds of thousands of presets:
@@ -24,7 +24,7 @@ namespace synth
 enum class LibraryKind : std::uint8_t
 {
     Synthax1Preset, // one .Synthax1Preset file
-    SylenthProgram // one program of a Sylenth1 .fxb bank or a lone .fxp
+    LegacyProgram // one program of a the reference synth .fxb bank or a lone .fxp
 };
 
 // Index 0 of the string table is the empty string.

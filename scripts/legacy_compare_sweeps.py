@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Side-by-side table of a sweep set measured on Sylenth1 and on Synthax1 (sylenth_measure.py JSON)."""
+"""Side-by-side table of a sweep set measured on the reference synth and on Synthax1 (legacy_measure.py JSON)."""
 import json
 import sys
 
-sylenth, synthax1, keys = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3].split(",")
-for a, b in zip(sylenth, synthax1):
+legacy, synthax1, keys = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3].split(",")
+for a, b in zip(legacy, synthax1):
     cells = []
     for key in keys:
         x, y = a.get(key), b.get(key)

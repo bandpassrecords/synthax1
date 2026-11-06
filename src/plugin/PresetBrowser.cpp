@@ -985,7 +985,7 @@ private:
             }
             else if (result == 1)
             {
-                chooser = std::make_unique<juce::FileChooser>("Choose another folder with presets or Sylenth1 banks");
+                chooser = std::make_unique<juce::FileChooser>("Choose another folder with presets or the reference synth banks");
                 chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
                                      [this](const juce::FileChooser& picked) {
                                          const auto folder = picked.getResult();

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Calibrate the knob curves SylenthPatchMapper still estimates, using Sylenth1 in any host.
+"""Calibrate the knob curves LegacyPatchMapper still estimates, using the reference synth in any host.
 
-  sylenth_calibration.py bank  OUT.fxb [--csv readings.csv]
+  legacy_calibration.py bank  OUT.fxb [--csv readings.csv]
       Writes a bank of five programs ("CAL 0.00" .. "CAL 1.00") that set every estimated knob
-      to 0, 0.25, 0.5, 0.75 and 1, plus a CSV to fill in. Load the bank in Sylenth1, select
-      each CAL program in turn, touch each listed knob without moving it (Sylenth1 shows its
+      to 0, 0.25, 0.5, 0.75 and 1, plus a CSV to fill in. Load the bank in the reference synth, select
+      each CAL program in turn, touch each listed knob without moving it (the reference synth shows its
       value on the display) and type that value into the CSV.
 
-  sylenth_calibration.py fit   readings.csv
+  legacy_calibration.py fit   readings.csv
       Fits each knob's readings with linear, exponential and power curves and prints the best
       fit with its worst error, ready to paste into the `curves` namespace.
 """
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sylenth_bank as sb  # noqa: E402
+import legacy_bank as sb  # noqa: E402
 
 POINTS = [0.0, 0.25, 0.5, 0.75, 1.0]
 

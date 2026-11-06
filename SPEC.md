@@ -7,15 +7,15 @@ This is the product contract. Historical research, old implementation checklists
 ## 1. Current Release Contract
 
 
-The 2026-10-09 product direction is a faithful recreation of the classic Sylenth1 interface, controls, signal path, and sound behavior. This contract supersedes older descriptions of Phase 1 as a modernized interpretation, an incremental pluck-engine expansion, or a UI polish exercise. Browser/Wasm work, AI generation, conversational editing, and additional modern synthesis features are deferred from this release.
+The 2026-10-09 product direction is a faithful recreation of the classic the reference synth interface, controls, signal path, and sound behavior. This contract supersedes older descriptions of Phase 1 as a modernized interpretation, an incremental pluck-engine expansion, or a UI polish exercise. Browser/Wasm work, AI generation, conversational editing, and additional modern synthesis features are deferred from this release.
 
-The provisional visual reference is the official Lennar Digital screenshot (kept outside the repository), the classic v3.0.2 view at 908 by 591 pixels. `Sylenth1Manual.pdf` defines documented interactions and signal flow. Other skins are supporting research, not interchangeable acceptance images. A reference-version change requires an explicit update to this contract.
+The provisional visual reference is a classic-layout screenshot kept outside the repository, at 908 by 591 pixels. The reference manual (kept outside the repository) defines documented interactions and signal flow. Other skins are supporting research, not interchangeable acceptance images. A reference-version change requires an explicit update to this contract.
 
 Conformance has four independent dimensions:
 
 1. **Visual:** the complete classic one-screen composition, dimensions, part states, LCD pages, labels, control geometry, and interaction states. Rendering MUST use owned implementation/assets and the Synthax1 identity. Branding differences MUST be explicit in reference comparisons. Third-party screenshot backplates and vendor logos MUST NOT be bundled as the implementation.
 2. **Behavior:** every exposed control MUST change the corresponding real parameter or documented local state. A control whose parameter is serialized but ignored by the selected sound path is a failure. Both parts, all four oscillators, all modulation sources/destinations, arp modes, FX controls, and program operations require behavior proof.
-3. **Audio:** source-owned DSP MUST be compared against authorized captures from the selected original version before sound equivalence is claimed. Self-render tests prove Synthax1 behavior and safety; they do not prove Sylenth equivalence. Bit-identical audio is an unverified requirement until reference phase/randomization, host, sample rate, and capture conditions are fixed and measured. Missing references MUST fail a requested equivalence check rather than produce a passing report.
+3. **Audio:** source-owned DSP MUST be compared against authorized captures from the selected original version before sound equivalence is claimed. Self-render tests prove Synthax1 behavior and safety; they do not prove Legacy equivalence. Bit-identical audio is an unverified requirement until reference phase/randomization, host, sample rate, and capture conditions are fixed and measured. Missing references MUST fail a requested equivalence check rather than produce a passing report.
 4. **Persistence:** complete Synthax1 host-state and preset restore, an owned versioned 512-program bank, and documented compatibility behavior. Original proprietary `.fxp`/`.fxb` compatibility MUST NOT be implied by support for Synthax1 banks; it requires its own documented mapping and validated reference files.
 
 The native architecture MUST provide:
@@ -100,7 +100,7 @@ MIDI program changes select the first 128 programs as documented by the original
 
 Host project state MUST be self-contained, including current program/bank data needed for restore. Current state MUST round-trip without relying on external preset files. Bank/preset validation MUST reject malformed or unsupported input without replacing valid live state. Writes MUST distinguish create-new from overwrite and avoid partial files.
 
-Old Synthax1 patches need not load or retain sound. External user files MUST remain untouched by development cleanup. The exact current owned format is documented in `docs/PRESET_SCHEMA.md`. Original Sylenth `.fxp`/`.fxb` files are a separate interoperability requirement, not an alias for the owned format.
+Old Synthax1 patches need not load or retain sound. External user files MUST remain untouched by development cleanup. The exact current owned format is documented in `docs/PRESET_SCHEMA.md`. Original Legacy `.fxp`/`.fxb` files are a separate interoperability requirement, not an alias for the owned format.
 
 ## 6. MIDI and Host Lifecycle
 

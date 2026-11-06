@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Measure rendered sweep sets (see sylenth_sweeps.py). Needs NumPy and SciPy.
+"""Measure rendered sweep sets (see legacy_sweeps.py). Needs NumPy and SciPy.
 
-  sylenth_measure.py RENDERS_DIR MANIFEST.json SET [--json OUT.json]
+  legacy_measure.py RENDERS_DIR MANIFEST.json SET [--json OUT.json]
 
 Prints one row per program and writes the raw measurements as JSON for curve fitting.
 """

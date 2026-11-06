@@ -14,8 +14,8 @@
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): components and realtime boundaries.
 - [PRESET_SCHEMA.md](PRESET_SCHEMA.md): preset and host-state shape.
-- [SYLENTH_IMPORT.md](SYLENTH_IMPORT.md): reading and writing Sylenth1 `.fxp` / `.fxb` files.
-- [SOUND_PARITY.md](SOUND_PARITY.md): how the sound is matched to Sylenth1, with the measurements.
+- [LEGACY_IMPORT.md](LEGACY_IMPORT.md): reading and writing the reference synth `.fxp` / `.fxb` files.
+- [SOUND_PARITY.md](SOUND_PARITY.md): how the sound is matched to the reference synth, with the measurements.
 - [CLASSIC_PARITY.md](CLASSIC_PARITY.md): control coverage and reference policy.
 - [VALIDATION.md](VALIDATION.md): tests, renders and host checks.
 - [QUALITY.md](QUALITY.md): formatting, linting and realtime-safety gates.

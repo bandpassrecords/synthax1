@@ -105,8 +105,8 @@ def compare_manifest(manifest_path: Path) -> dict[str, object]:
                 if not isinstance(case.get(field), str) or not case[field]:
                     raise ValueError(f'Missing {field}: original PCM recordings are required')
             source = case.get('source', {})
-            if source.get('product') != 'Sylenth1' or source.get('capture_origin') != 'original_plugin' or not source.get('captured_by'):
-                raise ValueError('Original Sylenth1 recording provenance is required')
+            if source.get('product') != 'the reference synth' or source.get('capture_origin') != 'original_plugin' or not source.get('captured_by'):
+                raise ValueError('Original the reference synth recording provenance is required')
             reference = manifest_path.parent / case['reference']
             candidate = manifest_path.parent / case['candidate']
             digest = hashlib.sha256(reference.read_bytes()).hexdigest()

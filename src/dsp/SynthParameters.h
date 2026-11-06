@@ -166,7 +166,7 @@ enum class ArpRateDivision
     DottedSixtyFourth = 19
 };
 
-// The arp rate choice list runs 1/1 to 1/64 in Sylenth1's order; this maps a choice index to its division.
+// The arp rate choice list runs 1/1 to 1/64 in the reference synth's order; this maps a choice index to its division.
 inline ArpRateDivision arpRateFromChoice(int index) noexcept
 {
     constexpr ArpRateDivision order[19] {

@@ -83,11 +83,11 @@ float ladderCoefficient(float cutoffHz, float sampleRate) noexcept
     return g / (1.0f + g);
 }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/drive, 44 programs): drive is a pre-gain followed by a limiter that
+// MEASURED (the reference synth 3.0.7.3, sweeps/drive, 44 programs): drive is a pre-gain followed by a limiter that
 // closes as drive rises. Fitted from two input levels at each of 11 drive settings, modelling the
 // limiter as A tanh(G x / A). Gains in dB; limits in units of a full-scale saw's peak (the filter
 // input of a 1-voice oscillator at full level is 0.7 in Synthax1, hence the scaling at use).
-// MEASURED (Sylenth1 3.0.7.3, sweeps/keytrack): the slope is one semitone per semitone at full, but the
+// MEASURED (the reference synth 3.0.7.3, sweeps/keytrack): the slope is one semitone per semitone at full, but the
 // reference note is low: at middle C the cutoff already sits 50.6 semitones above the knob's zero value
 // (fits within 1.5 semitones at every knob position), so the reference is MIDI note 9.4, not 60.
 constexpr float keytrackReferenceNote = 9.4f;
@@ -105,7 +105,7 @@ float tableAt(const std::array<float, 11>& table, float amount) noexcept
 
 float driveGainFor(float amount) noexcept { return std::pow(10.0f, tableAt(driveGainDb, amount) * 0.05f); }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/drive2, sine waveforms): the drive stage is not a saturator. The output
+// MEASURED (the reference synth 3.0.7.3, sweeps/drive2, sine waveforms): the drive stage is not a saturator. The output
 // follows the input up to a knee and then falls again (a sine at full drive and level comes out with a dip
 // at its crest), the knee moving to lower levels as drive rises. Modelled as x / (1 + (x/K)^4); K in the
 // filter input's units after the drive gain, interpolated on the log between these drive settings.
@@ -119,7 +119,7 @@ float driveLimitFor(float amount) noexcept
     return kneeScale * std::exp(std::log(kneeAt[index]) + (std::log(kneeAt[index + 1]) - std::log(kneeAt[index])) * fraction);
 }
 
-// MEASURED (Sylenth1 3.0.7.3, sweeps/hpresp): the highpass keeps a flat bass floor instead of rolling off
+// MEASURED (the reference synth 3.0.7.3, sweeps/hpresp): the highpass keeps a flat bass floor instead of rolling off
 // to nothing, about -25 dB under the passband and rising to -17 dB (24 dB slope) or -12 dB (12 dB slope) at
 // the highest cutoffs. Gain against cutoff in semitones.
 float highpassLeakFor(float cutoffSemitones, bool steep) noexcept
@@ -190,7 +190,7 @@ float Filter::process(float input, float midiNote, const SynthParameters& parame
     if (std::abs(cachedCutoffSemitones - cutoffSemitones) > 0.000001f
         || std::abs(cachedEffectiveSampleRate - effectiveSampleRate) > 0.001f)
     {
-        // MEASURED (sweeps/hpresp): Sylenth1's highpass corner stops rising near 6 kHz however far the knob goes.
+        // MEASURED (sweeps/hpresp): the reference synth's highpass corner stops rising near 6 kHz however far the knob goes.
         const auto highpass = filter.mode == FilterMode::H2 || filter.mode == FilterMode::H4;
         const auto cutoffHz = clampFast(cutoffSemitonesToHz(highpass ? std::min(cutoffSemitones, 113.0f) : cutoffSemitones), 8.0f, 0.45f * effectiveSampleRate);
         const auto safeSampleRate = effectiveSampleRate > 1000.0f ? effectiveSampleRate : 1000.0f;
@@ -379,7 +379,7 @@ SYNTHAX1_ALWAYS_INLINE float Filter::processCoreL4(float input, float coefficien
     return clippedStage[3];
 }
 
-// Sylenth1's bandpass measured 3-4 dB quieter at its centre than this ladder tap (docs/SOUND_PARITY.md).
+// The reference synth's bandpass measured 3-4 dB quieter at its centre than this ladder tap (docs/SOUND_PARITY.md).
 constexpr float bandpassTrim = 0.66f;
 
 SYNTHAX1_ALWAYS_INLINE float Filter::processCore(float input, float coefficient, float feedback, float driveGain,

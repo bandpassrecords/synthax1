@@ -168,8 +168,8 @@ def compare_manifest(manifest_path: Path, output_dir: Path) -> dict[str, object]
             reference = manifest_path.parent / case['reference']
             candidate = manifest_path.parent / case['candidate']
             source = case.get('source', {})
-            if source.get('product') != 'Sylenth1' or source.get('capture_origin') != 'original_plugin' or not source.get('captured_by'):
-                raise ValueError('Original Sylenth1 capture provenance is required')
+            if source.get('product') != 'the reference synth' or source.get('capture_origin') != 'original_plugin' or not source.get('captured_by'):
+                raise ValueError('Original the reference synth capture provenance is required')
             digest = hashlib.sha256(reference.read_bytes()).hexdigest()
             if source.get('sha256') != digest:
                 raise ValueError('Original reference SHA-256 is missing or mismatched')

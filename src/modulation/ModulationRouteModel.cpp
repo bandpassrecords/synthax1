@@ -128,7 +128,7 @@ std::vector<ModulationDestinationInfo> buildDestinationCatalog()
         {
             const auto prefix = "layer." + std::to_string(layer) + ".osc." + std::to_string(osc) + ".";
             const auto name = std::string(1, static_cast<char>('A' + layer - 1)) + std::to_string(osc);
-            append(prefix + "note", name + " Pitch", 120.0f, "semitones"); // Sylenth1: 120 semitones at +10
+            append(prefix + "note", name + " Pitch", 120.0f, "semitones"); // The reference synth: 120 semitones at +10
             append(prefix + "level", name + " Volume", 24.0f, "dB");
             append(prefix + "pan", name + " Pan", 1.0f, "normalized");
             append(prefix + "detune", name + " Detune", 1.0f, "normalized");
@@ -138,7 +138,7 @@ std::vector<ModulationDestinationInfo> buildDestinationCatalog()
     {
         const auto prefix = "layer." + std::to_string(layer) + ".filter.";
         const auto name = "Filter " + std::string(1, static_cast<char>('A' + layer - 1));
-        // MEASURED (Sylenth1 3.0.7.3, sweeps/cutmod): one octave per display unit, 122 semitones at +10.
+        // MEASURED (the reference synth 3.0.7.3, sweeps/cutmod): one octave per display unit, 122 semitones at +10.
         append(prefix + "cutoff_semitones", name + " Cutoff", 122.0f, "semitones");
         append(prefix + "resonance", name + " Resonance", 1.0f, "normalized");
         append(prefix + "drive", name + " Drive", 1.0f, "normalized");
@@ -147,7 +147,7 @@ std::vector<ModulationDestinationInfo> buildDestinationCatalog()
     {
         const auto prefix = "layer." + std::to_string(layer) + ".";
         const auto name = "Part " + std::string(1, static_cast<char>('A' + layer - 1));
-        append(prefix + "level_db", name + " Volume", 1.4f, "gain"); // linear: gain x (1 + m); Sylenth1 Volume +10 = 0.5, Mix +10 = 1.33
+        append(prefix + "level_db", name + " Volume", 1.4f, "gain"); // linear: gain x (1 + m); the reference synth Volume +10 = 0.5, Mix +10 = 1.33
         append(prefix + "pan", name + " Pan", 1.0f, "normalized");
     }
     for (int lfo = 1; lfo <= 2; ++lfo)

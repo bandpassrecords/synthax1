@@ -1,4 +1,4 @@
-#include "SylenthImport.h"
+#include "LegacyImport.h"
 
 #include "../plugin/ParameterRegistry.h"
 #include "../presets/PresetManager.h"
@@ -7,13 +7,13 @@
 #include <array>
 #include <unordered_map>
 
-namespace synth::sylenth
+namespace synth::legacy
 {
 namespace
 {
-const juce::Identifier sourceProperty { "sylenth_source" };
-const juce::Identifier fingerprintProperty { "sylenth_fingerprint" };
-const juce::Identifier modWheelProperty { "sylenth_mod_wheel" };
+const juce::Identifier sourceProperty { "legacy_source" };
+const juce::Identifier fingerprintProperty { "legacy_fingerprint" };
+const juce::Identifier modWheelProperty { "legacy_mod_wheel" };
 
 juce::String fingerprintText(const juce::ValueTree& state)
 {
@@ -53,7 +53,7 @@ std::vector<std::uint8_t> deflateWithJuce(std::span<const std::uint8_t> in)
 
 juce::String nameFromBytes(const std::string& raw)
 {
-    // Sylenth1 names are 8-bit; accept UTF-8 when valid, otherwise treat as Latin-1.
+    // The reference synth names are 8-bit; accept UTF-8 when valid, otherwise treat as Latin-1.
     if (juce::CharPointer_UTF8::isValidString(raw.c_str(), static_cast<int>(raw.size())))
         return juce::String::fromUTF8(raw.c_str(), static_cast<int>(raw.size())).trim();
     juce::String latin1;
@@ -146,18 +146,18 @@ ImportResult importDocument(juce::AudioProcessorValueTreeState& parameters, cons
         program.state.setProperty("current_preset", fallbackName, nullptr);
     }
     result.ok = !result.programs.empty();
-    result.message = result.ok ? summarize(result) : juce::String("Sylenth1 file contains no programs");
+    result.message = result.ok ? summarize(result) : juce::String("The reference synth file contains no programs");
     return result;
 }
 
 ImportResult importBytes(juce::AudioProcessorValueTreeState& parameters, std::span<const std::uint8_t> bytes,
                          const juce::String& fallbackName)
 {
-    const auto parsed = looksLikeChunk(bytes) ? readChunk(bytes, juceZlib()) : sylenth::read(bytes, juceZlib());
+    const auto parsed = looksLikeChunk(bytes) ? readChunk(bytes, juceZlib()) : legacy::read(bytes, juceZlib());
     if (!parsed.ok())
     {
         ImportResult failed;
-        failed.message = "Sylenth1 import failed: " + juce::String(parsed.error);
+        failed.message = "The reference synth import failed: " + juce::String(parsed.error);
         return failed;
     }
 
@@ -171,7 +171,7 @@ ImportResult importFile(juce::AudioProcessorValueTreeState& parameters, const ju
     if (file.getSize() > 64 * 1024 * 1024)
     {
         ImportResult failed;
-        failed.message = "Sylenth1 file exceeds the 64 MB limit";
+        failed.message = "The reference synth file exceeds the 64 MB limit";
         return failed;
     }
 
@@ -196,7 +196,7 @@ std::optional<SourceProgram> sourceProgram(const juce::ValueTree& state)
     if (!juce::Base64::convertFromBase64(decoded, encoded))
         return std::nullopt;
 
-    const auto parsed = sylenth::read({ static_cast<const std::uint8_t*>(decoded.getData()), decoded.getDataSize() }, juceZlib());
+    const auto parsed = legacy::read({ static_cast<const std::uint8_t*>(decoded.getData()), decoded.getDataSize() }, juceZlib());
     if (!parsed.ok() || parsed.document->patches.size() != 1)
         return std::nullopt;
     return SourceProgram { parsed.document->patches.front(), parsed.document->info };
@@ -214,7 +214,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
         auto source = sourceProgram(states[index]);
         if (!source)
         {
-            problems.add(label + " (not imported from Sylenth1)");
+            problems.add(label + " (not imported from the reference synth)");
             continue;
         }
         if (!isUneditedImport(states[index]))
@@ -230,7 +230,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
 
     if (!problems.isEmpty())
     {
-        error = "Cannot export as Sylenth1 bank: " + problems.joinIntoString(", ");
+        error = "Cannot export as the reference synth bank: " + problems.joinIntoString(", ");
         return false;
     }
     if (patches.empty())
@@ -241,7 +241,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
 
     if (patches.size() > static_cast<std::size_t>(programsPerBank))
     {
-        error = "A Sylenth1 bank holds " + juce::String(programsPerBank) + " programs";
+        error = "A the reference synth bank holds " + juce::String(programsPerBank) + " programs";
         return false;
     }
     padWithInit(patches);
@@ -267,7 +267,7 @@ juce::String summarize(const ImportResult& result)
         rejected += static_cast<int>(program.rejected.size());
     }
 
-    auto text = "Imported " + juce::String(static_cast<int>(result.programs.size())) + " Sylenth1 program"
+    auto text = "Imported " + juce::String(static_cast<int>(result.programs.size())) + " the reference synth program"
               + (result.programs.size() == 1 ? "" : "s");
     juce::StringArray details;
     if (approximations > 0)
@@ -278,4 +278,4 @@ juce::String summarize(const ImportResult& result)
         details.add(juce::String(rejected) + " rejected");
     return details.isEmpty() ? text : text + " (" + details.joinIntoString(", ") + ")";
 }
-} // namespace synth::sylenth
+} // namespace synth::legacy

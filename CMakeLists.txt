@@ -78,14 +78,14 @@ set(SYNTHAX1_COMMON_SOURCES
     src/presets/PresetManager.h
     src/presets/PresetValidator.cpp
     src/presets/PresetValidator.h
-    src/sylenth/SylenthFields.inc
-    src/sylenth/SylenthFormat.cpp
-    src/sylenth/SylenthInit.inc
-    src/sylenth/SylenthFormat.h
-    src/sylenth/SylenthImport.cpp
-    src/sylenth/SylenthImport.h
-    src/sylenth/SylenthPatchMapper.cpp
-    src/sylenth/SylenthPatchMapper.h
+    src/legacy/LegacyFields.inc
+    src/legacy/LegacyFormat.cpp
+    src/legacy/LegacyInit.inc
+    src/legacy/LegacyFormat.h
+    src/legacy/LegacyImport.cpp
+    src/legacy/LegacyImport.h
+    src/legacy/LegacyPatchMapper.cpp
+    src/legacy/LegacyPatchMapper.h
     src/voice/Voice.cpp
     src/voice/Voice.h
     src/voice/VoiceAllocator.cpp
@@ -174,23 +174,23 @@ target_compile_definitions(Synthax1Render
         JUCE_DISABLE_CAUTIOUS_PARAMETER_ID_CHECKING=1
         SYNTHAX1_PROJECT_VERSION="${PROJECT_VERSION}")
 
-# Offline host that renders the installed Sylenth1 for docs/SOUND_PARITY.md. A developer
+# Offline host that renders the installed the reference synth for docs/SOUND_PARITY.md. A developer
 # tool: it hosts VST3 plug-ins, so that is enabled for this target only.
-option(SYNTHAX1_BUILD_REFERENCE_HOST "Build the Sylenth1 reference render host" ON)
+option(SYNTHAX1_BUILD_REFERENCE_HOST "Build the the reference synth reference render host" ON)
 if(SYNTHAX1_BUILD_REFERENCE_HOST)
-    juce_add_console_app(SylenthRenderHost PRODUCT_NAME "SylenthRenderHost")
-    target_sources(SylenthRenderHost
+    juce_add_console_app(LegacyRenderHost PRODUCT_NAME "LegacyRenderHost")
+    target_sources(LegacyRenderHost
         PRIVATE
-            tools/sylenth_host/SylenthRenderHost.cpp
-            src/sylenth/SylenthFormat.cpp
-            src/sylenth/SylenthFormat.h)
-    target_compile_definitions(SylenthRenderHost
+            tools/legacy_host/LegacyRenderHost.cpp
+            src/legacy/LegacyFormat.cpp
+            src/legacy/LegacyFormat.h)
+    target_compile_definitions(LegacyRenderHost
         PRIVATE
             JUCE_PLUGINHOST_VST3=1
             JUCE_MODAL_LOOPS_PERMITTED=1
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0)
-    target_link_libraries(SylenthRenderHost
+    target_link_libraries(LegacyRenderHost
         PRIVATE
             juce::juce_audio_formats
             juce::juce_audio_processors
@@ -311,16 +311,16 @@ if(SYNTHAX1_ENABLE_TESTS)
     add_test(NAME Synthax1DspCoreTest COMMAND Synthax1DspCoreTest)
     set_tests_properties(Synthax1DspCoreTest PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
-    # Sylenth1 interop. Format/mapper tests are JUCE-free; pass a folder of real
-    # .fxp/.fxb files with -DSYNTHAX1_SYLENTH_SAMPLES=<dir> to round-trip them too.
-    set(SYNTHAX1_SYLENTH_SAMPLES "" CACHE PATH "Optional folder of Sylenth1 .fxp/.fxb files for round-trip tests")
-    add_executable(SylenthFormatTest src/sylenth/SylenthFormat.cpp tests/sylenth/SylenthFormatTest.cpp)
-    add_test(NAME SylenthFormatTest COMMAND SylenthFormatTest ${SYNTHAX1_SYLENTH_SAMPLES})
-    add_executable(SylenthMapperTest src/sylenth/SylenthFormat.cpp src/sylenth/SylenthPatchMapper.cpp tests/sylenth/SylenthMapperTest.cpp)
-    add_test(NAME SylenthMapperTest COMMAND SylenthMapperTest)
+    # The reference synth interop. Format/mapper tests are JUCE-free; pass a folder of real
+    # .fxp/.fxb files with -DSYNTHAX1_LEGACY_SAMPLES=<dir> to round-trip them too.
+    set(SYNTHAX1_LEGACY_SAMPLES "" CACHE PATH "Optional folder of the reference synth .fxp/.fxb files for round-trip tests")
+    add_executable(LegacyFormatTest src/legacy/LegacyFormat.cpp tests/legacy/LegacyFormatTest.cpp)
+    add_test(NAME LegacyFormatTest COMMAND LegacyFormatTest ${SYNTHAX1_LEGACY_SAMPLES})
+    add_executable(LegacyMapperTest src/legacy/LegacyFormat.cpp src/legacy/LegacyPatchMapper.cpp tests/legacy/LegacyMapperTest.cpp)
+    add_test(NAME LegacyMapperTest COMMAND LegacyMapperTest)
 
-    add_executable(SylenthImportTest ${SYNTHAX1_COMMON_SOURCES} tests/sylenth/SylenthImportTest.cpp)
-    target_link_libraries(SylenthImportTest
+    add_executable(LegacyImportTest ${SYNTHAX1_COMMON_SOURCES} tests/legacy/LegacyImportTest.cpp)
+    target_link_libraries(LegacyImportTest
         PRIVATE
             juce::juce_core
             juce::juce_audio_basics
@@ -328,13 +328,13 @@ if(SYNTHAX1_ENABLE_TESTS)
             juce::juce_dsp
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
-    target_compile_definitions(SylenthImportTest
+    target_compile_definitions(LegacyImportTest
         PRIVATE
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0
             JUCE_DISABLE_CAUTIOUS_PARAMETER_ID_CHECKING=1
             SYNTHAX1_PROJECT_VERSION="${PROJECT_VERSION}")
-    add_test(NAME SylenthImportTest COMMAND SylenthImportTest ${SYNTHAX1_SYLENTH_SAMPLES})
+    add_test(NAME LegacyImportTest COMMAND LegacyImportTest ${SYNTHAX1_LEGACY_SAMPLES})
 
     add_test(NAME Synthax1RenderCoreSuite
         COMMAND Synthax1Render --suite core --output-dir "${CMAKE_CURRENT_BINARY_DIR}/reports/ctest-core")

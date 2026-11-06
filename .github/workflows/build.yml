@@ -60,7 +60,7 @@ jobs:
           key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Configure
-        # The Sylenth1 reference render host is a developer tool (needs a local Sylenth1), so it is not built here.
+        # The the reference synth reference render host is a developer tool (needs a local the reference synth), so it is not built here.
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}

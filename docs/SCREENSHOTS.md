@@ -1,6 +1,6 @@
 # Synthax1 interface guide
 
-These are unmodified captures of Synthax1 0.1.0 Standalone, taken on 2026-10-09 at the native 908 × 591 size. The interface is drawn from owned code and uses the Synthax1 identity. The classic Sylenth1 reference guides the recreation; these images document Synthax1, and do not establish identical pixels or sound. See the [product contract](../SPEC.md#1-current-release-contract) for the separate visual, behavior, audio, and persistence requirements.
+These are unmodified captures of Synthax1 0.1.0 Standalone, taken on 2026-10-09 at the native 908 × 591 size. The interface is drawn from owned code and uses the Synthax1 identity. The classic the reference synth reference guides the recreation; these images document Synthax1, and do not establish identical pixels or sound. See the [product contract](../SPEC.md#1-current-release-contract) for the separate visual, behavior, audio, and persistence requirements.
 
 ## Part A: start with a pluck
 

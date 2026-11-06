@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Knob sweeps for calibrating SylenthPatchMapper against Sylenth1's real output.
+"""Knob sweeps for calibrating LegacyPatchMapper against the reference synth's real output.
 
-  sylenth_sweeps.py OUTDIR SET      writes OUTDIR/SET.fxb, SET.mid and SET.json
+  legacy_sweeps.py OUTDIR SET      writes OUTDIR/SET.fxb, SET.mid and SET.json
 
 Each set is a bank of programs that differ in one knob only, played the same way. Render a
-set with SylenthRenderHost and measure it with sylenth_measure.py. Sets:
+set with LegacyRenderHost and measure it with legacy_measure.py. Sets:
 
   filter   noise through LP24 (resonance 8): part cutoff swept at control 0.25/0.5/1.0, and the
            control swept at part 0.5. The resonance peak shows the cutoff frequency.
@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import sylenth_bank as sb  # noqa: E402
-import sylenth_reference_bank as ref  # noqa: E402
-from sylenth_reference_bank import Note, Program  # noqa: E402
+import legacy_bank as sb  # noqa: E402
+import legacy_reference_bank as ref  # noqa: E402
+from legacy_reference_bank import Note, Program  # noqa: E402
 
 STEPS = [i / 20 for i in range(21)]
 NOISE = ref.wave("noise")
@@ -475,7 +475,7 @@ def reverbfine_set() -> list[Program]:
 
 
 def reverbdamp_set() -> list[Program]:
-    # Fine damp values (used to invert Synthax1's damping against Sylenth1's curve).
+    # Fine damp values (used to invert Synthax1's damping against the reference synth's curve).
     base = {"OscA1Wave": ref.wave("noise"), "XSwReverbOnOff": 1.0, "ReverbDry_Wet": 1.0, "ReverbSize": 0.5,
             "ReverbDamp": 0.0, "ReverbPredelay": 0.0, "ReverbWidth": 1.0,
             "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.5)}

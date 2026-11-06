@@ -12,8 +12,8 @@ __pycache__/
 
 # Third-party material kept locally for research, never published
 Serum_Manual.pdf
-Sylenth1Manual.pdf
-research/sylenth1-screenshots/
+*Manual.pdf
+research/legacy-screenshots/
 research/parity/presets/
 research/parity/acid/
 research/parity/var431/
@@ -22,4 +22,4 @@ research/parity/*.png
 init.png
 serum2.jpg
 research/
-FXPSylenth1Preset.bt
+*.bt

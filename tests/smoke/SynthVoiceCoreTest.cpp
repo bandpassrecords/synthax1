@@ -23,7 +23,7 @@ bool testEnvelope()
     if (env.getValue() < 0.99f)
         return false;
 
-    // Release time is the time to fall 40 dB (Sylenth1's definition); the curve then runs to
+    // Release time is the time to fall 40 dB (the reference synth's definition); the curve then runs to
     // silence at 1.31 x that time, so a 10 ms release ends within 14 ms.
     env.noteOff();
     for (int i = 0; i < 14; ++i)

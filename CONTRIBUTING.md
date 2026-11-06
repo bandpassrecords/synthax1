@@ -10,7 +10,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-CMake downloads JUCE 8.0.13. Use `-DSYNTHAX1_JUCE_PATH=/path/to/JUCE` for an existing checkout. `SYNTHAX1_BUILD_REFERENCE_HOST=ON` also builds a tool that renders through a locally installed Sylenth1 for the sound-matching work (see `docs/SOUND_PARITY.md`); it is off in CI.
+CMake downloads JUCE 8.0.13. Use `-DSYNTHAX1_JUCE_PATH=/path/to/JUCE` for an existing checkout. `SYNTHAX1_BUILD_REFERENCE_HOST=ON` also builds a tool that renders through a locally installed the reference synth for the sound-matching work (see `docs/SOUND_PARITY.md`); it is off in CI.
 
 ## Pull requests
 

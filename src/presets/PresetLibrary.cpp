@@ -1,7 +1,7 @@
 #include "PresetLibrary.h"
 
 #include "PresetManager.h"
-#include "../sylenth/SylenthImport.h"
+#include "../legacy/LegacyImport.h"
 
 #include <juce_core/juce_core.h>
 
@@ -125,11 +125,11 @@ RawFile readSynthax1Preset(const std::filesystem::path& path)
     return result;
 }
 
-RawFile readSylenthFile(const std::filesystem::path& path)
+RawFile readLegacyFile(const std::filesystem::path& path)
 {
     RawFile result;
-    result.kind = LibraryKind::SylenthProgram;
-    const auto file = sylenth::readFile(utf8(path), sylenth::juceZlib());
+    result.kind = LibraryKind::LegacyProgram;
+    const auto file = legacy::readFile(utf8(path), legacy::juceZlib());
     if (!file.ok())
         return result;
     result.bank = cleanBankName(utf8(path.stem()));
@@ -237,7 +237,7 @@ CacheIndex readCache(const std::filesystem::path& cachePath)
         CacheFile entry;
         entry.size = reader.i64();
         entry.modified = reader.i64();
-        entry.kind = reader.u8() == 0 ? LibraryKind::Synthax1Preset : LibraryKind::SylenthProgram;
+        entry.kind = reader.u8() == 0 ? LibraryKind::Synthax1Preset : LibraryKind::LegacyProgram;
         entry.bank = reader.str();
         entry.count = reader.u32();
         entry.length = reader.u32();
@@ -306,7 +306,7 @@ public:
         data.files.push_back(path);
         infos.push_back({ size, modified, data.entries.size(), derivedVendor });
 
-        const auto loose = file.kind == LibraryKind::SylenthProgram && hasExtension(path, ".fxp");
+        const auto loose = file.kind == LibraryKind::LegacyProgram && hasExtension(path, ".fxp");
         const auto folderName = folder.empty() ? root.label : utf8(std::filesystem::path(std::u8string(folder.begin(), folder.end())).filename());
         // Single-program files are not a bank: they are grouped by the folder they sit in.
         const auto bankText = loose ? folderName : (!file.bank.empty() ? file.bank : (folder.empty() ? root.label : folder));
@@ -372,7 +372,7 @@ public:
         {
             const auto first = infos[file].firstEntry;
             const auto last = file + 1 < finished.files.size() ? infos[file + 1].firstEntry : finished.entries.size();
-            const auto kind = last > first ? finished.entries[first].kind : (hasExtension(finished.files[file], ".synthax1preset") ? LibraryKind::Synthax1Preset : LibraryKind::SylenthProgram);
+            const auto kind = last > first ? finished.entries[first].kind : (hasExtension(finished.files[file], ".synthax1preset") ? LibraryKind::Synthax1Preset : LibraryKind::LegacyProgram);
             ByteWriter body;
             for (auto i = first; i < last; ++i)
             {
@@ -614,7 +614,7 @@ std::shared_ptr<const LibraryData> scanLibrary(const std::vector<LibraryRoot>& r
             if (cached != cache.files.end() && cached->second.size == job.size && cached->second.modified == job.modified)
                 file = decodeCacheFile(cache, cached->second);
             else
-                file = job.isPreset ? readSynthax1Preset(job.path) : readSylenthFile(job.path);
+                file = job.isPreset ? readSynthax1Preset(job.path) : readLegacyFile(job.path);
             if (job.isPreset)
                 file.kind = LibraryKind::Synthax1Preset;
 

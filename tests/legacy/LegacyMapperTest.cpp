@@ -1,14 +1,14 @@
-// JUCE-free tests for SylenthPatchMapper: selector decoding and route expansion.
-// Registry validity of every emitted ID/label is checked by SylenthImportTest (needs JUCE).
+// JUCE-free tests for LegacyPatchMapper: selector decoding and route expansion.
+// Registry validity of every emitted ID/label is checked by LegacyImportTest (needs JUCE).
 
-#include "../../src/sylenth/SylenthPatchMapper.h"
+#include "../../src/legacy/LegacyPatchMapper.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
-using namespace synth::sylenth;
+using namespace synth::legacy;
 
 namespace
 {
@@ -46,7 +46,7 @@ float valueOf(const MappedPatch& mapped, const std::string& id)
 
 bool near(float a, float b, float tolerance = 1.0e-3f) { return std::abs(a - b) <= tolerance; }
 
-// Bit patterns quoted in FXPSylenth1Preset.bt.
+// Bit patterns quoted in the public field template.
 float bits(std::uint32_t pattern)
 {
     float value;
@@ -173,7 +173,7 @@ void testMeasuredCurves()
     for (auto& value : patch.values)
         value = 0.5f;
     patch[Field::AmpEnvAAttack] = 0.0f;
-    patch[Field::AmpEnvARelease] = 1.0f;       // ~30 s in Sylenth1
+    patch[Field::AmpEnvARelease] = 1.0f;       // ~30 s in the reference synth
     patch[Field::ModEnv1Decay] = 0.6f;         // 28.187 * e^(6.9709 * 0.6) = 1847 ms
     patch[Field::FilterACutoff] = 0.64f;       // the reference's worked example:
     patch[Field::FilterCtlCutoff] = 0.32f;     //   590 Hz + 24.3 Hz control -> 1100 Hz
@@ -195,7 +195,7 @@ void testMeasuredCurves()
     check(near(valueOf(mapped, "mod_env.decay_ms"), 1384.0f, 2.0f), "decay table at 0.6");
 
     const auto combined = valueOf(mapped, "layer.1.filter.cutoff_semitones") + valueOf(mapped, "filter_control.cutoff_semitones");
-    // 1100 Hz nominal, minus the measured 1.79 semitone offset of Sylenth1's resonance peak.
+    // 1100 Hz nominal, minus the measured 1.79 semitone offset of the reference synth's resonance peak.
     check(near(combined, semitones(1100.0f) - 1.79f, 0.3f), "part + control cutoff reproduce 1100 Hz (with measured offset)");
 
     check(valueOf(mapped, "fx.delay_high_cut_hz") == 200.0f, "delay high cut at 1.0 is its lowest value");
@@ -227,6 +227,6 @@ int main()
     testOscillatorsAndFilters();
     testModulation();
     testArpAndVoice();
-    std::printf(failures == 0 ? "SylenthMapperTest: all passed\n" : "SylenthMapperTest: %d failure(s)\n", failures);
+    std::printf(failures == 0 ? "LegacyMapperTest: all passed\n" : "LegacyMapperTest: %d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

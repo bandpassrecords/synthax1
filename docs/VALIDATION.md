@@ -6,7 +6,7 @@ Validation must prove the instrument behaves correctly as a plugin and as a soun
 
 The rebuild uses one native architecture. Its behavior checks prove the local
 implementation responds to its controls. They do
-not prove a Sylenth audio match or a pixel match.
+not prove a Legacy audio match or a pixel match.
 
 `Synthax1DspCoreTest` includes these native cases:
 
@@ -101,9 +101,9 @@ still required for this rebuild.
 
 ## Original Reference Evidence
 
-Original Sylenth recordings and original lossless captures are not available in
-this worktree. `tests/references/sylenth-reference-manifest.json` records that
-absence explicitly. No local synthax1 render is used as a Sylenth golden, and
+Original Legacy recordings and original lossless captures are not available in
+this worktree. `tests/references/legacy-reference-manifest.json` records that
+absence explicitly. No local synthax1 render is used as a Legacy golden, and
 passing patch-recreation renders does not establish external fidelity.
 
 The checked-in reference manifest is an acquisition checklist, not a passing
@@ -111,16 +111,16 @@ fixture. Populate every required case with an original-plugin capture and its
 provenance before evaluating fidelity. Preserve the original version, host,
 patch settings, fixed MIDI input, sample rate, buffer size and tempo. Reference
 paths are relative to the manifest directory. Each original requires its
-SHA-256, `product: Sylenth1`, `capture_origin: original_plugin` and `captured_by`.
+SHA-256, `product: the reference synth`, `capture_origin: original_plugin` and `captured_by`.
 Audio cases require explicit approved max-absolute and RMS difference limits
 with an approver and reason. No audio tolerance is inferred from local tests.
 
 ```bash
 python3 scripts/compare-reference-audio.py \
-  --manifest tests/references/sylenth-reference-manifest.json \
+  --manifest tests/references/legacy-reference-manifest.json \
   --output build/reports/reference/audio.json
 python3 scripts/compare-reference-images.py \
-  --manifest tests/references/sylenth-reference-manifest.json \
+  --manifest tests/references/legacy-reference-manifest.json \
   --output-dir build/reports/reference/images
 python3 tests/tools/ReferenceComparisonTest.py
 ```
@@ -452,7 +452,7 @@ The first implementation milestone is not complete until:
 
 The integrated Debug quality gate passed all 11 CTest entries and all 17 standalone core reports. The current reference-tool test has seven synthetic positive/negative cases; these are tool correctness tests, not original-plugin fidelity evidence.
 
-All eight LCD pages plus Part B and 2x exports have valid binding reports and clean capture logs. Repeated explicit Init captures are byte-identical to one another. This is a deterministic local-capture result, not equality to Sylenth1. A missing supplied snapshot preset exits with failure and produces no PNG.
+All eight LCD pages plus Part B and 2x exports have valid binding reports and clean capture logs. Repeated explicit Init captures are byte-identical to one another. This is a deterministic local-capture result, not equality to the reference synth. A missing supplied snapshot preset exits with failure and produces no PNG.
 
 Snapshot mode initializes program 0/Init when `SYNTHAX1_UI_SNAPSHOT_PRESET` is absent. Supply an explicit current preset path for any other state. Normal standalone/host restore behavior is unchanged outside snapshot mode.
 

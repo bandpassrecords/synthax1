@@ -169,7 +169,7 @@ public:
         }
     }
     float physical() const { return parameter != nullptr ? parameter->convertFrom0to1(normalized) : 0; }
-    // Knobs and faders read 0 to 10 (or -10 to 10 when the control goes both ways), as on Sylenth1.
+    // Knobs and faders read 0 to 10 (or -10 to 10 when the control goes both ways), as on the reference synth.
     juce::String displayText(float physicalValue) const
     {
         const auto knobStyle = style == Style::Knob || style == Style::DisplayKnob || style == Style::SmallKnob || style == Style::Fader;

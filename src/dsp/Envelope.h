@@ -11,7 +11,7 @@ enum class EnvelopeStage
     Release
 };
 
-// Times follow Sylenth1's definitions (measured): attack = time to full level along an
+// Times follow the reference synth's definitions (measured): attack = time to full level along an
 // S-shaped curve; decay and release = time to fall 40 dB along a fixed curve that ends near
 // -90 dB at 1.31 x that time.
 struct EnvelopeSettings

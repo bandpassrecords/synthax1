@@ -323,7 +323,7 @@ void SynthEngine::setParameters(const SynthParameters& newParameters) noexcept
             {
                 switch (index % 5)
                 {
-                    case 0: limit = 120.0f; break; // oscillator pitch: Sylenth1 reaches 120 semitones
+                    case 0: limit = 120.0f; break; // oscillator pitch: the reference synth reaches 120 semitones
                     case 1: limit = 24.0f; break;
                     case 4: limit = 180.0f; break;
                     default: break;
@@ -450,7 +450,7 @@ RenderStats SynthEngine::process(float* left, float* right, int numSamples) noex
         }
 
         // Soft output limiter instead of a hard clip: untouched up to 0.9, approaching but never
-        // reaching 1.0 above it. Sylenth1's float path peaks above 0 dBFS on loud programs; this
+        // reaching 1.0 above it. The reference synth's float path peaks above 0 dBFS on loud programs; this
         // rounds such peaks rather than flattening them, and still guarantees |output| < 1.
         const auto limit = [](float value) noexcept {
             const auto magnitude = std::abs(value);

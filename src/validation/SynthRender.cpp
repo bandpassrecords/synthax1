@@ -1,4 +1,4 @@
-#include "../sylenth/SylenthImport.h"
+#include "../legacy/LegacyImport.h"
 #include "../dsp/Filter.h"
 #include "../dsp/OscillatorStack.h"
 #include "../dsp/SynthEngine.h"
@@ -55,7 +55,7 @@ struct Options
     std::filesystem::path fixturePath = "fixtures/midi/overlap-pluck.mid";
     std::string notes = "C1,C3,C5,C7";
     std::vector<std::uint32_t> randomizeSeeds { 1u, 42u, 12345u, 67890u };
-    std::filesystem::path sylenthBank;
+    std::filesystem::path legacyBank;
     std::filesystem::path manifestPath;
     std::string argumentError;
 };
@@ -246,9 +246,9 @@ Options parseOptions(int argc, char* argv[])
         {
             options.outputDir = argv[++i];
         }
-        else if (arg == "--sylenth-bank" && i + 1 < argc)
+        else if (arg == "--legacy-bank" && i + 1 < argc)
         {
-            options.sylenthBank = argv[++i];
+            options.legacyBank = argv[++i];
         }
         else if (arg == "--manifest" && i + 1 < argc)
         {
@@ -325,7 +325,7 @@ Options parseOptions(int argc, char* argv[])
             std::cout << "  Synthax1Render --suite patch-recreation --output-dir <dir>\n";
             std::cout << "  Synthax1Render --preset <json> --fixture <path> --dry --output <wav> --report <json>\n";
             std::cout << "  Synthax1Render --preset <json> --fixture <path> --wet --output <wav> --report <json>\n";
-            std::cout << "  Synthax1Render --sylenth-bank <fxb> --manifest <json> --output-dir <dir>\n";
+            std::cout << "  Synthax1Render --legacy-bank <fxb> --manifest <json> --output-dir <dir>\n";
             std::exit(0);
         }
     }
@@ -3354,10 +3354,10 @@ int runPerfBench(const Options& options)
 } // namespace
 
 // ---------------------------------------------------------------- sound parity
-// Renders the programs of a Sylenth1 bank on the timeline of a parity manifest
-// (docs/SOUND_PARITY.md): each program is imported through SylenthImport exactly as the
+// Renders the programs of a the reference synth bank on the timeline of a parity manifest
+// (docs/SOUND_PARITY.md): each program is imported through LegacyImport exactly as the
 // plugin would, played at the manifest's tempo, and written as 32-bit float WAV, one file
-// per program plus the whole timeline, matching SylenthRenderHost's output.
+// per program plus the whole timeline, matching LegacyRenderHost's output.
 
 void writeWavFloat(const std::filesystem::path& path, const std::vector<float>& left, const std::vector<float>& right,
                    int sampleRate)
@@ -3387,13 +3387,13 @@ void writeWavFloat(const std::filesystem::path& path, const std::vector<float>& 
     }
 }
 
-int renderSylenthBank(const Options& options)
+int renderLegacyBank(const Options& options)
 {
     constexpr int sampleRate = 48000;
-    const auto bank = synth::sylenth::readFile(options.sylenthBank.string(), synth::sylenth::juceZlib());
+    const auto bank = synth::legacy::readFile(options.legacyBank.string(), synth::legacy::juceZlib());
     if (!bank.ok())
     {
-        std::cerr << "cannot read " << options.sylenthBank.string() << ": " << bank.error << "\n";
+        std::cerr << "cannot read " << options.legacyBank.string() << ": " << bank.error << "\n";
         return 1;
     }
     const auto manifest = juce::JSON::parse(juce::File(options.manifestPath.string()));
@@ -3421,7 +3421,7 @@ int renderSylenthBank(const Options& options)
             continue;
         }
 
-        const auto imported = synth::sylenth::buildProgram(owner.parameters, bank.document->patches[static_cast<std::size_t>(index)],
+        const auto imported = synth::legacy::buildProgram(owner.parameters, bank.document->patches[static_cast<std::size_t>(index)],
                                                            bank.document->info);
         synth::SynthParameters parameters;
         std::string error;
@@ -3432,7 +3432,7 @@ int renderSylenthBank(const Options& options)
             continue;
         }
         parameters.tempoBpm = tempo;
-        parameters.performance.modWheel = static_cast<float>(imported.state.getProperty("sylenth_mod_wheel", 0.0f));
+        parameters.performance.modWheel = static_cast<float>(imported.state.getProperty("legacy_mod_wheel", 0.0f));
         parameters.fx.enabled = true; // the rack is always on in the plugin; modules switch themselves
 
         const auto samples = static_cast<int>(std::ceil(length * sampleRate));
@@ -3498,8 +3498,8 @@ int main(int argc, char* argv[])
         return 2;
     }
 
-    if (!options.sylenthBank.empty())
-        return renderSylenthBank(options);
+    if (!options.legacyBank.empty())
+        return renderLegacyBank(options);
 
     if (!options.suite.empty())
     {

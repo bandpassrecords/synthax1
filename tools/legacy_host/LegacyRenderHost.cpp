@@ -1,19 +1,19 @@
-// Offline reference renderer: hosts the installed Sylenth1 VST3, plays the sound-parity
+// Offline reference renderer: hosts the installed the reference synth VST3, plays the sound-parity
 // reference set (docs/SOUND_PARITY.md) and writes WAV files, with no DAW involved.
 //
-//   SylenthRenderHost --plugin <Sylenth1.vst3> --bank <Synthax1Reference.fxb>
+//   LegacyRenderHost --plugin <the reference synth.vst3> --bank <Synthax1Reference.fxb>
 //                     --manifest <Synthax1Reference.json> --out <dir> [--rate 48000] [--block 256]
 //
 // For each program in the manifest the host builds a bank holding that program in slot 1
 // (selected), hands it to the plug-in as VST3 component state in the form Cubase stores
 // ("VstW" header + .fxb), checks the plug-in now reports the program's parameter values,
 // then renders the program's notes offline. It writes one WAV per program and the whole
-// timeline as SylenthReference.wav (matching the manifest, like a Cubase export would).
+// timeline as LegacyReference.wav (matching the manifest, like a Cubase export would).
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
-#include "../../src/sylenth/SylenthFormat.h"
+#include "../../src/legacy/LegacyFormat.h"
 
 #include <cmath>
 #include <cstdio>
@@ -53,7 +53,7 @@ std::vector<std::uint8_t> deflate(std::span<const std::uint8_t> in)
     return { data, data + compressed.getDataSize() };
 }
 
-const sylenth::Zlib zlib { inflate, deflate };
+const legacy::Zlib zlib { inflate, deflate };
 
 // ---------------------------------------------------------------- transport
 class FixedTempoPlayHead final : public juce::AudioPlayHead
@@ -112,7 +112,7 @@ juce::String normalisedName(const juce::String& name)
     return name.retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").toLowerCase();
 }
 
-// Counts the plug-in parameters whose name matches a Sylenth1 field and whose value differs
+// Counts the plug-in parameters whose name matches a the reference synth field and whose value differs
 // from the patch: a non-zero result means the state did not take.
 struct StateCheck
 {
@@ -121,16 +121,16 @@ struct StateCheck
     juce::String firstDifference;
 };
 
-StateCheck checkState(juce::AudioPluginInstance& plugin, const sylenth::Patch& patch)
+StateCheck checkState(juce::AudioPluginInstance& plugin, const legacy::Patch& patch)
 {
     StateCheck check;
     for (auto* parameter : plugin.getParameters())
     {
         const auto name = normalisedName(parameter->getName(128));
-        for (int index = 0; index < sylenth::fieldCount; ++index)
+        for (int index = 0; index < legacy::fieldCount; ++index)
         {
-            const auto field = static_cast<sylenth::Field>(index);
-            if (normalisedName(juce::String(std::string(sylenth::fieldName(field)))) != name)
+            const auto field = static_cast<legacy::Field>(index);
+            if (normalisedName(juce::String(std::string(legacy::fieldName(field)))) != name)
                 continue;
             ++check.matched;
             const auto expected = patch[field];
@@ -164,20 +164,20 @@ bool writeWav(const juce::File& file, const juce::AudioBuffer<float>& audio, dou
 
 int run(const juce::StringArray& args)
 {
-    const juce::File pluginFile(argument(args, "--plugin", "C:/Program Files/Common Files/VST3/LennarDigital/Sylenth1.vst3"));
+    const juce::File pluginFile(argument(args, "--plugin", ""));
     const juce::File bankFile(argument(args, "--bank"));
     const juce::File manifestFile(argument(args, "--manifest"));
     const juce::File outDir(argument(args, "--out"));
     const auto rate = argument(args, "--rate", "48000").getDoubleValue();
     const auto block = argument(args, "--block", "256").getIntValue();
-    if (!bankFile.existsAsFile() || !manifestFile.existsAsFile() || outDir == juce::File())
+    if (!pluginFile.exists() || !bankFile.existsAsFile() || !manifestFile.existsAsFile() || outDir == juce::File())
     {
-        std::puts("usage: SylenthRenderHost --plugin <vst3> --bank <fxb> --manifest <json> --out <dir> [--rate 48000] [--block 256]");
+        std::puts("usage: LegacyRenderHost --plugin <vst3> --bank <fxb> --manifest <json> --out <dir> [--rate 48000] [--block 256]");
         return 2;
     }
 
     // Reference bank.
-    const auto read = sylenth::readFile(bankFile.getFullPathName().toStdString(), zlib);
+    const auto read = legacy::readFile(bankFile.getFullPathName().toStdString(), zlib);
     if (!read.ok())
     {
         std::printf("cannot read bank: %s\n", read.error.c_str());
@@ -242,13 +242,13 @@ int run(const juce::StringArray& args)
         }
 
         // A bank with this program in slot 1, selected; the rest Init.
-        std::vector<sylenth::Patch> bank { read.document->patches[static_cast<std::size_t>(index)] };
-        sylenth::padWithInit(bank);
+        std::vector<legacy::Patch> bank { read.document->patches[static_cast<std::size_t>(index)] };
+        legacy::padWithInit(bank);
         auto info = sourceInfo;
         info.chunkCurrentProgram = 0;
         info.future.clear();
         plugin->suspendProcessing(true);
-        const auto state = componentState(sylenth::writeBank(bank, info, zlib));
+        const auto state = componentState(legacy::writeBank(bank, info, zlib));
         plugin->setStateInformation(state.getData(), static_cast<int>(state.getSize()));
         juce::MessageManager::getInstance()->runDispatchLoopUntil(30); // let the plug-in finish applying it
         plugin->reset();
@@ -256,7 +256,7 @@ int run(const juce::StringArray& args)
 
         const auto check = checkState(*plugin, bank.front());
         if (index == 0 || check.matched == 0)
-            std::printf("  state check: %d parameters matched to Sylenth1 fields\n", check.matched);
+            std::printf("  state check: %d parameters matched to the reference synth fields\n", check.matched);
         if (check.matched > 0 && check.different > 0)
         {
             std::printf("  %-28s state did not take: %d of %d parameters differ, e.g. %s\n", name.toRawUTF8(),
@@ -307,8 +307,8 @@ int run(const juce::StringArray& args)
     }
 
     plugin->releaseResources();
-    writeWav(outDir.getChildFile("SylenthReference.wav"), timeline, rate);
-    std::printf("wrote %s (%.1f s)%s\n", outDir.getChildFile("SylenthReference.wav").getFullPathName().toRawUTF8(),
+    writeWav(outDir.getChildFile("LegacyReference.wav"), timeline, rate);
+    std::printf("wrote %s (%.1f s)%s\n", outDir.getChildFile("LegacyReference.wav").getFullPathName().toRawUTF8(),
                 totalSeconds, failures > 0 ? (", " + juce::String(failures) + " problem(s)").toRawUTF8() : "");
     return failures > 0 ? 1 : 0;
 }

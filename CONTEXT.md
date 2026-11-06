@@ -1,13 +1,13 @@
 # synthax1 Context
 
-synthax1 is a macOS/Ableton software instrument. The active release recreates the classic Sylenth1 interface and behavior for AU/VST3 hosts. The 2026-10-09 contract at the start of `SPEC.md` takes precedence over earlier modernized UI directions. AI generation, conversational editing, and the separate browser/Wasm initiative are deferred.
+synthax1 is a macOS/Ableton software instrument. The active release recreates the classic the reference synth interface and behavior for AU/VST3 hosts. The 2026-10-09 contract at the start of `SPEC.md` takes precedence over earlier modernized UI directions. AI generation, conversational editing, and the separate browser/Wasm initiative are deferred.
 
 ## Core Vocabulary
 
 - `synthax1`: working project and plugin identity for the lab rebuild.
 - `Spec`: `SPEC.md`, the durable product contract.
 - `Lab`: the product context for rebuilding a vintage VST workflow and extending it with modern AI-native capabilities.
-- `Phase 1`: recreate the Sylenth-style instrument workflow and sound-design surface as a modern macOS/Ableton AU/VST3.
+- `Phase 1`: recreate the Legacy-style instrument workflow and sound-design surface as a modern macOS/Ableton AU/VST3.
 - `Phase 2`: AI-assisted sound, patch, chord movement, and arpeggio generation, with generated output stored as normal editable synth state.
 - `Phase 3`: conversational control where text prompts or reference sounds produce reversible synth, modulation, arp, and FX edits.
 - `Historical Strobe research`: older supporting engine research that helped bootstrap the current pluck core. It is not the product destination.
@@ -25,7 +25,7 @@ synthax1 is a macOS/Ableton software instrument. The active release recreates th
 
 The main product thesis:
 
-- Recreate Sylenth first: fast A/B virtual analog workflow, recognizable oscillator/filter/modulation/arp/effects coverage, and high trust in Ableton.
+- Recreate Legacy first: fast A/B virtual analog workflow, recognizable oscillator/filter/modulation/arp/effects coverage, and high trust in Ableton.
 - Then add AI where it improves musical speed: patch ideation, safe randomization, arpeggios/chord movement, and reference-sound matching.
 - Then make the VST conversational so users can ask for edits instead of hunting through every parameter.
 
