@@ -906,11 +906,23 @@ synth::SynthParameters SynthAudioProcessor::readParameters(float tempoBpm, bool 
     for (int step = 0; step < synth::lfoStepSlotCount; ++step)
         snapshot.lfo2.steps[static_cast<std::size_t>(step)] = value(nativeRaw.lfo2Steps[static_cast<std::size_t>(step)], synth::defaultLfoStepValue(step));
     const auto& destinations = synth::modulationDestinationCatalog();
+    constexpr std::array<synth::ModSource, 4> fixedSources { synth::ModSource::ModEnv, synth::ModSource::ModEnv2, synth::ModSource::Lfo, synth::ModSource::Lfo2 };
     for (int slot = 0; slot < synth::transModSlotCount; ++slot)
     {
         auto& slotSnapshot = snapshot.transMod.slots[static_cast<std::size_t>(slot)];
         for (int destination = 0; destination < synth::nativeModDestinationCount; ++destination)
             slotSnapshot.nativeDepths[static_cast<std::size_t>(destination)] = value(nativeRaw.depths[static_cast<std::size_t>(slot)][static_cast<std::size_t>(destination)], 0.0f);
+        // A depth set directly (by the modulation matrix) is enough to switch the slot on; the first four slots always carry
+        // their own source, the others keep the source chosen for them.
+        const auto hasDepth = slotSnapshot.depth != 0.0f || slotSnapshot.oscPitchSemitones != 0.0f || slotSnapshot.filterCutoffSemitones != 0.0f
+            || slotSnapshot.ampLevelDb != 0.0f || slotSnapshot.pan != 0.0f
+            || std::any_of(slotSnapshot.nativeDepths.begin(), slotSnapshot.nativeDepths.end(), [](float depth) { return depth != 0.0f; });
+        if (hasDepth)
+        {
+            slotSnapshot.enabled = true;
+            if (slot < 4)
+                slotSnapshot.source = fixedSources[static_cast<std::size_t>(slot)];
+        }
         for (int route = 0; route < 2; ++route)
         {
             const auto selection = static_cast<int>(value(nativeRaw.destinations[static_cast<std::size_t>(slot)][static_cast<std::size_t>(route)], 0.0f)) - 1;

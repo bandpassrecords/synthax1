@@ -38,7 +38,7 @@ Release acceptance requires the integrated current commit to pass the repository
 
 Synthax1 owns its original implementation, synthesis and MIDI behavior, native controls, current preset/program state, host integration, validation, and release artifacts. The first release targets macOS AU and VST3; Standalone supports inspection and validation. It does not require an account or a network connection at runtime.
 
-The classic reference defines the primary user experience. Modern modulation halos, scopes, browser dashboards, AI controls, and other extensions MUST NOT displace the original control surface. Future work must be separately scoped after native conformance.
+The classic reference defines the primary user experience. Scopes, browser dashboards, AI controls, and other extensions MUST NOT displace the original control surface. The modulation row is the first part of the surface that Synthax1 redesigns on its own terms (see Extended modulation under Modulation); the rest stays as specified until separately scoped.
 
 ## 3. Parameter and Control Contract
 
@@ -73,6 +73,17 @@ The two part amp envelopes independently shape the filtered output. A releasing 
 Two modulation envelopes and two LFOs MUST be independently configurable. LFO controls include shape, rate, gain, offset, free-running behavior, and host sync. Selected-version waveform coverage MUST be verified from actual references; unverified names or counts MUST NOT be fabricated.
 
 Modulation includes the original performance/miscellaneous sources and signed destination amounts. The routing model, host state, preset state, and actual realtime destinations MUST agree. Both source slots of each original panel MUST be independently editable. Global/free LFO phase advances during silence and changes to rate/sync/free state MUST take effect without unintended resets.
+
+#### Extended modulation (Synthax1 interface, 2026-11)
+
+The modulation row is no longer a copy of the classic panels. These requirements replace the two-route limit and the fixed-size panels; they do not change the sound of any existing patch.
+
+- The window opens 20% larger and the modulation section is taller than the classic layout. The rest of the surface is unchanged.
+- Each modulation envelope draws its curve (the real stage shapes) with draggable handles and also shows attack, decay, sustain and release as knobs.
+- Each LFO draws its wave with gain, offset and rate on the display. The Step wave is a curve the user draws: click or drag across its columns, with 2 to 16 steps.
+- A source can have any number of destinations. A route is the depth of one destination on the source's slot, so every destination of every slot is its own saved, automatable parameter. The classic destination and amount pairs stay valid: they are read, listed and edited like the new routes, and old presets and banks produce the same sound.
+- A **modulation matrix** lists every route (source, destination, amount) with add, change and remove. Dragging a source handle onto a knob that can be modulated adds a route to it; modulated knobs show a ring in the source colour.
+- The first four slots belong to Mod Env 1, Mod Env 2, LFO 1 and LFO 2. Slots 5 to 8 take any other source. More slots and destinations MAY be added later; new parameters MUST be appended so released parameter IDs and route choice indices keep their meaning.
 
 ### Arpeggiator
 

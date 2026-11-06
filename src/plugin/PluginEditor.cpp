@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 #include "PresetBrowser.h"
+#include "../dsp/Lfo.h"
+#include "../modulation/ModulationRouteModel.h"
 
 #include <algorithm>
 #include <array>
@@ -7,18 +9,105 @@
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <set>
+#include <tuple>
 #include <vector>
 
 namespace
 {
 constexpr int canvasWidth = 908;
-constexpr int canvasHeight = 591;
+constexpr int modulationExtra = 135; // the modulation section is taller than the original layout; everything under it moves down
+constexpr int canvasHeight = 591 + modulationExtra;
 const auto graphite = juce::Colour(0xff292b2c);
 const auto silver = juce::Colour(0xffd0d4d2);
 const auto lettering = juce::Colour(0xffe7e5dc);
 const auto displayBlue = juce::Colour(0xffa8c9d1);
 const auto displayInk = juce::Colour(0xff3e6077);
 const auto amber = juce::Colour(0xffe8b663);
+
+// Each modulation source has its own colour: on its display, on its drag handle and on the ring it draws around a target.
+juce::Colour modulationColour(int slot)
+{
+    switch (slot)
+    {
+        case 1: return juce::Colour(0xffe8b663);
+        case 2: return juce::Colour(0xff6fd0c4);
+        case 3: return juce::Colour(0xffa98cf0);
+        case 4: return juce::Colour(0xfff08aa5);
+        default: return juce::Colour(0xff9bb4ff);
+    }
+}
+juce::String modulationName(int slot)
+{
+    static const char* const names[] = { "Mod Env 1", "Mod Env 2", "LFO 1", "LFO 2" };
+    return slot >= 1 && slot <= 4 ? juce::String(names[slot - 1]) : "Mod " + juce::String(slot);
+}
+constexpr const char* modulationDragPrefix = "synthax1.mod:";
+
+// The first four slots belong to Mod Env 1, Mod Env 2, LFO 1 and LFO 2; the others take any source.
+int fixedModulationSource(int slot)
+{
+    switch (slot)
+    {
+        case 1: return static_cast<int>(synth::ModSource::ModEnv);
+        case 2: return static_cast<int>(synth::ModSource::ModEnv2);
+        case 3: return static_cast<int>(synth::ModSource::Lfo);
+        case 4: return static_cast<int>(synth::ModSource::Lfo2);
+        default: return -1;
+    }
+}
+float readParameterValue(SynthAudioProcessor& owner, const std::string& id)
+{
+    const auto* value = owner.getValueTreeState().getRawParameterValue(id);
+    return value != nullptr ? value->load() : 0.0f;
+}
+void setParameterValue(SynthAudioProcessor& owner, const std::string& id, float physical)
+{
+    if (auto* parameter = owner.getValueTreeState().getParameter(id))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(physical));
+        parameter->endChangeGesture();
+    }
+}
+void activateModulationSlot(SynthAudioProcessor& owner, int slot)
+{
+    const auto prefix = "transmod." + std::to_string(slot) + ".";
+    setParameterValue(owner, prefix + "enabled", 1.0f);
+    if (const auto fixed = fixedModulationSource(slot); fixed >= 0)
+        setParameterValue(owner, prefix + "source", static_cast<float>(fixed));
+}
+// A source reaches a destination through that destination's depth parameter on the source's slot. Any number of
+// destinations can be set on one slot, so a source is not limited to two targets.
+std::string modulationDepthId(int slot, int destinationIndex)
+{
+    const auto& catalog = synth::modulationDestinationCatalog();
+    if (destinationIndex < 0 || destinationIndex >= static_cast<int>(catalog.size()))
+        return {};
+    return synth::transModDepthParameterId(slot, catalog[static_cast<std::size_t>(destinationIndex)]);
+}
+float modulationDepthScale(SynthAudioProcessor& owner, const std::string& depthId)
+{
+    if (const auto* parameter = owner.getValueTreeState().getParameter(depthId))
+    {
+        const auto range = parameter->getNormalisableRange();
+        return std::max(std::abs(range.start), std::abs(range.end));
+    }
+    return 1.0f;
+}
+float modulationAmount(SynthAudioProcessor& owner, int slot, int destinationIndex)
+{
+    const auto id = modulationDepthId(slot, destinationIndex);
+    return id.empty() ? 0.0f : readParameterValue(owner, id) / modulationDepthScale(owner, id);
+}
+void setModulationAmount(SynthAudioProcessor& owner, int slot, int destinationIndex, float amount)
+{
+    const auto id = modulationDepthId(slot, destinationIndex);
+    if (id.empty())
+        return;
+    activateModulationSlot(owner, slot);
+    setParameterValue(owner, id, juce::jlimit(-1.0f, 1.0f, amount) * modulationDepthScale(owner, id));
+}
 
 // Menus open at the mouse, wherever the editor sits and however it is scaled.
 juce::PopupMenu::Options optionsAtMouse()
@@ -101,7 +190,7 @@ juce::String formattedValue(const synth::ParameterSpec& spec, float value)
     return juce::String(value, 2) + (spec.unit == "degrees" ? " deg" : "");
 }
 
-class ClassicParameterControl final : public juce::Component
+class ClassicParameterControl final : public juce::Component, public juce::DragAndDropTarget
 {
 public:
     enum class Style
@@ -135,6 +224,7 @@ public:
         if (parameter == nullptr || specification == nullptr)
             juce::Logger::writeToLog("Synthax1 editor has no parameter binding for: " + juce::String(id));
         jassert(parameter != nullptr && specification != nullptr);
+        findModulationTarget();
         updateValue();
     }
 
@@ -160,6 +250,7 @@ public:
                 if (auto* handler = getAccessibilityHandler()) handler->notifyAccessibilityEvent(juce::AccessibilityEvent::valueChanged);
             }
         }
+        refreshModulation();
         const auto next = parameter->getValue();
         if (std::abs(next - normalized) > 0.0000001f)
         {
@@ -404,6 +495,7 @@ public:
         g.drawLine(centre.x + std::sin(angle) * radius * 0.14f, centre.y - std::cos(angle) * radius * 0.14f,
                    centre.x + std::sin(angle) * radius * 0.81f, centre.y - std::cos(angle) * radius * 0.81f,
                    small ? 1.2f : 3.0f);
+        paintModulation(g, centre, radius + (small ? 2.5f : 8.5f));
     }
     void mouseDown(const juce::MouseEvent& event) override
     {
@@ -479,7 +571,115 @@ public:
         return std::make_unique<ParameterAccessibilityHandler>(*this);
     }
 
+    // Drag a modulation handle onto a knob to route that source to it (the first free route of the source's slot).
+    bool isInterestedInDragSource(const SourceDetails& details) override
+    {
+        return modulationDestination >= 0 && details.description.toString().startsWith(modulationDragPrefix);
+    }
+    void itemDragEnter(const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit(const SourceDetails&) override { dropHover = false; repaint(); }
+    void itemDropped(const SourceDetails& details) override
+    {
+        dropHover = false;
+        assignModulation(details.description.toString().fromFirstOccurrenceOf(modulationDragPrefix, false, false).getIntValue());
+        refreshModulation();
+        repaint();
+    }
+
 private:
+    struct ModulationRoute
+    {
+        int slot = 0;
+        const std::atomic<float>* destination = nullptr;
+        const std::atomic<float>* amount = nullptr;
+    };
+    struct ModulationDepth
+    {
+        int slot = 0;
+        const std::atomic<float>* depth = nullptr;
+        float scale = 1.0f;
+    };
+    // Finds out whether any modulation route can target this control, and keeps cheap handles to those routes.
+    void findModulationTarget()
+    {
+        if (specification == nullptr || style == Style::Switch || style == Style::Selector || style == Style::Slope)
+            return;
+        const auto& catalog = synth::modulationDestinationCatalog();
+        for (std::size_t index = 0; index < catalog.size(); ++index)
+            if (catalog[index].nativeIndex >= 0 && catalog[index].targetParameterId == id)
+                modulationDestination = static_cast<int>(index) + 1; // choice 0 is "None"
+        if (modulationDestination < 0)
+            return;
+        modulationDestinations.push_back(modulationDestination);
+        // The general "Filter Cutoff" and "Osc Pitch" routes act on every part, so they show on these knobs too.
+        const auto endsWith = [this](const char* suffix) { return juce::String(id).endsWith(suffix); };
+        for (std::size_t index = 0; index < catalog.size(); ++index)
+            if ((catalog[index].destination == synth::ModulationDestination::FilterCutoff && endsWith(".filter.cutoff_semitones"))
+                || (catalog[index].destination == synth::ModulationDestination::OscPitch && endsWith(".note")))
+                modulationDestinations.push_back(static_cast<int>(index) + 1);
+        auto& state = owner.getValueTreeState();
+        for (int slot = 1; slot <= synth::transModSlotCount; ++slot)
+        {
+            const auto depthId = modulationDepthId(slot, modulationDestination - 1);
+            modulationDepths.push_back({ slot, state.getRawParameterValue(depthId), modulationDepthScale(owner, depthId) });
+            for (int route = 1; route <= 2; ++route)
+            {
+                const auto prefix = "transmod." + std::to_string(slot) + ".route." + std::to_string(route) + ".";
+                modulationRoutes.push_back({ slot, state.getRawParameterValue(prefix + "destination"),
+                                             state.getRawParameterValue(prefix + "amount") });
+            }
+        }
+    }
+    void refreshModulation()
+    {
+        if (modulationRoutes.empty() && modulationDepths.empty())
+            return;
+        std::array<float, 9> next {};
+        for (const auto& entry : modulationDepths)
+            if (entry.depth != nullptr && entry.scale > 0.0f)
+                next[static_cast<std::size_t>(entry.slot)] += entry.depth->load() / entry.scale;
+        for (const auto& route : modulationRoutes)
+            if (route.destination != nullptr && route.amount != nullptr
+                && std::find(modulationDestinations.begin(), modulationDestinations.end(),
+                             juce::roundToInt(route.destination->load())) != modulationDestinations.end())
+                next[static_cast<std::size_t>(route.slot)] += route.amount->load();
+        if (next != modulationAmounts)
+        {
+            modulationAmounts = next;
+            repaint();
+        }
+    }
+    void paintModulation(juce::Graphics& g, juce::Point<float> centre, float radius) const
+    {
+        const auto position = [](float value) { return juce::MathConstants<float>::pi * (1.22f + 1.56f * juce::jlimit(0.0f, 1.0f, value)); };
+        for (int slot = 1; slot <= synth::transModSlotCount; ++slot)
+        {
+            const auto amount = modulationAmounts[static_cast<std::size_t>(slot)];
+            if (std::abs(amount) < 0.001f)
+                continue;
+            juce::Path arc;
+            arc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, position(normalized),
+                              position(normalized + amount), true);
+            g.setColour(modulationColour(slot));
+            g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        if (dropHover)
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.85f));
+            g.drawEllipse(centre.x - radius - 2, centre.y - radius - 2, (radius + 2) * 2, (radius + 2) * 2, 1.5f);
+        }
+    }
+    void assignModulation(int slot)
+    {
+        if (slot < 1 || slot > synth::transModSlotCount || modulationDestination < 1)
+            return;
+        // A route that already points here keeps its amount; a new one starts at half.
+        if (std::abs(modulationAmount(owner, slot, modulationDestination - 1)) < 0.001f)
+            setModulationAmount(owner, slot, modulationDestination - 1, 0.5f);
+        else
+            activateModulationSlot(owner, slot);
+        publishReadout(modulationName(slot), "-> " + getName());
+    }
     bool isToggleControl() const noexcept
     {
         return style == Style::Switch || style == Style::Slope || style == Style::Selector;
@@ -756,6 +956,12 @@ private:
     float dragStart = 0;
     bool dragging = false;
     bool filterEnabled = true;
+    int modulationDestination = -1; // choice index of this control in a route's destination list, or -1
+    std::vector<int> modulationDestinations; // the choice indices that act on this control
+    std::vector<ModulationRoute> modulationRoutes;
+    std::vector<ModulationDepth> modulationDepths;
+    std::array<float, 9> modulationAmounts {};
+    bool dropHover = false;
 };
 
 class ClassicAction final : public juce::Component
@@ -892,9 +1098,1094 @@ private:
     bool selectableAction = false;
     bool menuAction = false;
 };
+
+// ---- Modulation displays (experiment) -------------------------------------------------------------------------
+// The Mod Env and LFO panels draw what the parameters do and let the curve itself be dragged. The drag handle in each
+// panel header routes its source: drop it on any knob that can be a modulation destination.
+using ReadoutCallback = std::function<void(const juce::String&, const juce::String&)>;
+
+class ModulationDisplay : public juce::Component
+{
+public:
+    virtual void refresh() = 0;
+};
+
+void displayPlate(juce::Graphics& g, juce::Rectangle<float> area)
+{
+    g.setColour(juce::Colours::black.withAlpha(0.7f));
+    g.fillRoundedRectangle(area.expanded(1.5f), 4.0f);
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff1b2123), area.getTopLeft(),
+                                           juce::Colour(0xff0f1314), area.getBottomLeft(), false));
+    g.fillRoundedRectangle(area, 3.0f);
+}
+
+// Draws and edits attack, decay, sustain and release as one curve. The time axis gives each stage a fixed share of the
+// width; a handle moves along its share as the parameter goes from its minimum to its maximum.
+class EnvelopeCurveDisplay final : public ModulationDisplay
+{
+public:
+    EnvelopeCurveDisplay(SynthAudioProcessor& processor, const std::string& prefix, int slot, ReadoutCallback readoutCallback)
+        : colour(modulationColour(slot)), readout(std::move(readoutCallback))
+    {
+        const std::array<const char*, 4> suffixes { "attack_ms", "decay_ms", "sustain", "release_ms" };
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            const auto id = prefix + suffixes[i];
+            parameters[i] = processor.getValueTreeState().getParameter(id);
+            specifications[i] = synth::findParameterSpec(id);
+            cached[i] = parameters[i] != nullptr ? parameters[i]->getValue() : 0.0f;
+        }
+        setTitle(modulationName(slot) + " envelope");
+        setDescription("Drag the three handles to set attack, decay, sustain and release");
+    }
+    ~EnvelopeCurveDisplay() override { endGestures(); }
+
+    void refresh() override
+    {
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            const auto next = parameters[i] != nullptr ? parameters[i]->getValue() : 0.0f;
+            if (std::abs(next - cached[i]) > 0.0000001f)
+            {
+                cached[i] = next;
+                repaint();
+            }
+        }
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
+        const auto shape = layout();
+        // Stage dividers and letters sit at fixed places, so the time axis is easy to read.
+        const std::array<const char*, 4> letters { "A", "D", "S", "R" };
+        const std::array<float, 4> widths { shape.attack, shape.decay, shape.hold, shape.release };
+        auto edge = shape.plot.getX();
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            if (i > 0)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.07f));
+                g.drawVerticalLine(juce::roundToInt(edge), shape.plot.getY(), shape.plot.getBottom());
+            }
+            drawText(g, letters[i], { juce::roundToInt(edge), juce::roundToInt(shape.plot.getBottom()) + 1,
+                                      juce::roundToInt(widths[i]), 9 }, 7.0f, lettering.withAlpha(0.45f));
+            edge += widths[i];
+        }
+        g.setColour(juce::Colours::white.withAlpha(0.07f));
+        g.drawHorizontalLine(juce::roundToInt(shape.plot.getY()), shape.plot.getX(), shape.plot.getRight());
+
+        const auto curve = curvePath(shape);
+        juce::Path fill(curve);
+        fill.lineTo(shape.release_.end.x, shape.plot.getBottom());
+        fill.lineTo(shape.plot.getX(), shape.plot.getBottom());
+        fill.closeSubPath();
+        g.setGradientFill(juce::ColourGradient(colour.withAlpha(0.32f), 0, shape.plot.getY(),
+                                               colour.withAlpha(0.03f), 0, shape.plot.getBottom(), false));
+        g.fillPath(fill);
+        g.setColour(colour);
+        g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        for (int handle = 0; handle < 3; ++handle)
+        {
+            const auto point = handlePosition(shape, handle);
+            const auto active = handle == dragged || handle == hovered;
+            g.setColour(juce::Colour(0xff0b0e0f));
+            g.fillEllipse(point.x - 5.0f, point.y - 5.0f, 10.0f, 10.0f);
+            g.setColour(active ? juce::Colours::white : colour);
+            g.fillEllipse(point.x - (active ? 4.0f : 3.2f), point.y - (active ? 4.0f : 3.2f),
+                          active ? 8.0f : 6.4f, active ? 8.0f : 6.4f);
+        }
+    }
+
+    void mouseMove(const juce::MouseEvent& event) override
+    {
+        const auto next = handleAt(event.position);
+        if (next != hovered)
+        {
+            hovered = next;
+            setMouseCursor(next >= 0 ? juce::MouseCursor::UpDownLeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+            repaint();
+        }
+    }
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        hovered = -1;
+        repaint();
+    }
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        endGestures();
+        dragged = handleAt(event.position);
+        if (dragged < 0)
+            return;
+        for (const auto index : parametersOfHandle(dragged))
+            if (parameters[index] != nullptr)
+            {
+                parameters[index]->beginChangeGesture();
+                gestureOpen[index] = true;
+            }
+        publish(parametersOfHandle(dragged).front());
+        repaint();
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (dragged < 0)
+            return;
+        const auto shape = layout();
+        const auto position = event.position;
+        if (dragged == 0)
+            setNormalized(0, unstretch((position.x - shape.attack_.start.x) / shape.attack));
+        else if (dragged == 1)
+        {
+            setNormalized(1, unstretch((position.x - shape.attack_.end.x) / shape.decay));
+            setNormalized(2, (shape.plot.getBottom() - position.y) / shape.plot.getHeight());
+        }
+        else
+            setNormalized(3, unstretch((position.x - shape.hold_.end.x) / shape.release));
+        repaint();
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        endGestures();
+        dragged = -1;
+        repaint();
+    }
+    void mouseDoubleClick(const juce::MouseEvent& event) override
+    {
+        const auto handle = handleAt(event.position);
+        if (handle < 0)
+            return;
+        for (const auto index : parametersOfHandle(handle))
+            if (auto* parameter = parameters[index])
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(parameter->getDefaultValue());
+                parameter->endChangeGesture();
+            }
+        repaint();
+    }
+
+private:
+    struct Stage
+    {
+        juce::Point<float> start;
+        juce::Point<float> end;
+    };
+    struct Layout
+    {
+        juce::Rectangle<float> plot;
+        float attack = 0, decay = 0, hold = 0, release = 0; // the width each stage owns
+        Stage attack_, decay_, hold_, release_;
+        float sustain = 0;
+    };
+    // The decay and release curves reach their end in finite time (see Envelope.cpp); k is that fraction of the time constant.
+    static constexpr float overshoot = 0.1545f;
+
+    // The time parameters are strongly skewed, so short times would crowd the left of each stage; the square root spreads them.
+    static float stretch(float position) { return std::sqrt(juce::jlimit(0.0f, 1.0f, position)); }
+    static float unstretch(float fraction) { const auto clamped = juce::jlimit(0.0f, 1.0f, fraction); return clamped * clamped; }
+    float normalizedValue(std::size_t index) const { return parameters[index] != nullptr ? parameters[index]->getValue() : 0.0f; }
+    Layout layout() const
+    {
+        Layout result;
+        result.plot = getLocalBounds().toFloat().reduced(8.0f, 9.0f).withTrimmedBottom(2.0f);
+        const auto width = result.plot.getWidth();
+        result.attack = width * 0.26f;
+        result.decay = width * 0.26f;
+        result.hold = width * 0.14f;
+        result.release = width * 0.34f;
+        result.sustain = normalizedValue(2);
+        const auto bottom = result.plot.getBottom();
+        const auto top = result.plot.getY();
+        const auto sustainY = bottom - result.sustain * result.plot.getHeight();
+        result.attack_ = { { result.plot.getX(), bottom }, { result.plot.getX() + result.attack * stretch(normalizedValue(0)), top } };
+        result.decay_ = { result.attack_.end, { result.attack_.end.x + result.decay * stretch(normalizedValue(1)), sustainY } };
+        result.hold_ = { result.decay_.end, { result.decay_.end.x + result.hold, sustainY } };
+        result.release_ = { result.hold_.end, { result.hold_.end.x + result.release * stretch(normalizedValue(3)), bottom } };
+        return result;
+    }
+    static juce::Point<float> handlePosition(const Layout& shape, int handle)
+    {
+        return handle == 0 ? shape.attack_.end : handle == 1 ? shape.decay_.end : shape.release_.end;
+    }
+    juce::Path curvePath(const Layout& shape) const
+    {
+        const auto height = shape.plot.getHeight();
+        const auto bottom = shape.plot.getBottom();
+        const auto k = std::log((1.0f + overshoot) / overshoot);
+        juce::Path path;
+        path.startNewSubPath(shape.attack_.start);
+        constexpr int steps = 18;
+        for (int i = 1; i <= steps; ++i)
+        {
+            const auto u = static_cast<float>(i) / steps;
+            const auto level = std::min(1.0f, (1.0f + overshoot) * (1.0f - std::exp(-k * u)));
+            path.lineTo(shape.attack_.start.x + (shape.attack_.end.x - shape.attack_.start.x) * u, bottom - level * height);
+        }
+        const auto sustain = shape.sustain;
+        const auto target = sustain - overshoot * (1.0f - sustain);
+        for (int i = 1; i <= steps; ++i)
+        {
+            const auto u = static_cast<float>(i) / steps;
+            const auto level = std::max(sustain, target + (1.0f - target) * std::exp(-k * u));
+            path.lineTo(shape.decay_.start.x + (shape.decay_.end.x - shape.decay_.start.x) * u, bottom - level * height);
+        }
+        path.lineTo(shape.hold_.end);
+        const auto releaseK = std::log((sustain + overshoot) / overshoot);
+        for (int i = 1; i <= steps; ++i)
+        {
+            const auto u = static_cast<float>(i) / steps;
+            const auto level = std::max(0.0f, -overshoot + (sustain + overshoot) * std::exp(-releaseK * u));
+            path.lineTo(shape.release_.start.x + (shape.release_.end.x - shape.release_.start.x) * u, bottom - level * height);
+        }
+        return path;
+    }
+    int handleAt(juce::Point<float> position) const
+    {
+        const auto shape = layout();
+        int best = -1;
+        auto bestDistance = 10.0f;
+        for (int handle = 0; handle < 3; ++handle)
+        {
+            const auto distance = position.getDistanceFrom(handlePosition(shape, handle));
+            if (distance < bestDistance)
+            {
+                best = handle;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+    static std::vector<std::size_t> parametersOfHandle(int handle)
+    {
+        return handle == 0 ? std::vector<std::size_t> { 0 } : handle == 1 ? std::vector<std::size_t> { 1, 2 } : std::vector<std::size_t> { 3 };
+    }
+    void setNormalized(std::size_t index, float value)
+    {
+        auto* parameter = parameters[index];
+        if (parameter == nullptr)
+            return;
+        const auto snapped = parameter->convertTo0to1(parameter->convertFrom0to1(juce::jlimit(0.0f, 1.0f, value)));
+        parameter->setValueNotifyingHost(snapped);
+        cached[index] = parameter->getValue();
+        publish(index);
+    }
+    void publish(std::size_t index)
+    {
+        if (parameters[index] != nullptr && specifications[index] != nullptr && readout)
+            readout(specifications[index]->name, formattedValue(*specifications[index], parameters[index]->convertFrom0to1(parameters[index]->getValue())));
+    }
+    void endGestures()
+    {
+        for (std::size_t i = 0; i < 4; ++i)
+            if (gestureOpen[i] && parameters[i] != nullptr)
+                parameters[i]->endChangeGesture();
+        gestureOpen = {};
+    }
+
+    std::array<juce::RangedAudioParameter*, 4> parameters {};
+    std::array<const synth::ParameterSpec*, 4> specifications {};
+    std::array<float, 4> cached {};
+    std::array<bool, 4> gestureOpen {};
+    juce::Colour colour;
+    ReadoutCallback readout;
+    int dragged = -1;
+    int hovered = -1;
+};
+
+// Draws the LFO as it is set (output = gain x (wave + offset)), two cycles for the ordinary waves. The dot on the right
+// edge sets the gain, the dot on the left edge the offset, dragging the curve sideways sets the rate, and the two chips pick
+// the wave and switch between host sync and free running. With the Step wave the display shows one cycle of steps
+// instead: click or drag across the columns to draw the curve, and use the arrows to change how many steps there are.
+class LfoCurveDisplay final : public ModulationDisplay
+{
+public:
+    LfoCurveDisplay(SynthAudioProcessor& processor, const std::string& prefix, const std::string& rateId, int slot,
+                    ReadoutCallback readoutCallback)
+        : owner(processor), idPrefix(prefix), colour(modulationColour(slot)), readout(std::move(readoutCallback))
+    {
+        auto& state = processor.getValueTreeState();
+        const std::array<std::string, 6> ids { prefix + "shape", prefix + "gain", prefix + "offset", rateId, prefix + "free",
+                                               prefix + "step_count" };
+        for (std::size_t i = 0; i < ids.size(); ++i)
+        {
+            parameters[i] = state.getParameter(ids[i]);
+            specifications[i] = synth::findParameterSpec(ids[i]);
+        }
+        for (std::size_t i = 0; i < stepParameters.size(); ++i)
+            stepParameters[i] = state.getParameter(prefix + "step." + std::to_string(i + 1));
+        signature = currentSignature();
+        setTitle(modulationName(slot) + " waveform");
+        setDescription("Drag the dots to set gain and offset, drag the curve sideways to set the rate");
+    }
+    ~LfoCurveDisplay() override { endGestures(); }
+
+    void refresh() override
+    {
+        const auto next = currentSignature();
+        if (next != signature)
+        {
+            signature = next;
+            repaint();
+        }
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
+        const auto plot = plotArea();
+        const auto centreY = plot.getCentreY();
+        const auto half = plot.getHeight() * 0.5f;
+        g.setColour(juce::Colours::white.withAlpha(0.09f));
+        g.drawHorizontalLine(juce::roundToInt(centreY), plot.getX(), plot.getRight());
+
+        if (stepMode())
+            paintSteps(g, plot);
+        else
+        {
+            g.drawVerticalLine(juce::roundToInt(plot.getCentreX()), plot.getY(), plot.getBottom());
+            const auto gain = value(1);
+            const auto offset = value(2, true);
+            const auto points = preview(160);
+            juce::Path curve;
+            for (std::size_t i = 0; i < points.size(); ++i)
+            {
+                const auto x = plot.getX() + plot.getWidth() * static_cast<float>(i) / static_cast<float>(points.size() - 1);
+                const auto y = centreY - juce::jlimit(-1.0f, 1.0f, gain * (points[i] + offset)) * half;
+                if (i == 0) curve.startNewSubPath(x, y); else curve.lineTo(x, y);
+            }
+            juce::Path fill(curve);
+            fill.lineTo(plot.getRight(), centreY);
+            fill.lineTo(plot.getX(), centreY);
+            fill.closeSubPath();
+            g.setColour(colour.withAlpha(0.16f));
+            g.fillPath(fill);
+            g.setColour(colour);
+            g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            for (int dot = 0; dot < 2; ++dot)
+            {
+                const auto point = dotPosition(dot);
+                const auto active = dragMode == (dot == 0 ? Mode::Gain : Mode::Offset);
+                g.setColour(juce::Colours::white.withAlpha(0.1f));
+                g.drawVerticalLine(juce::roundToInt(point.x), plot.getY(), plot.getBottom());
+                g.setColour(juce::Colour(0xff0b0e0f));
+                g.fillEllipse(point.x - 4.5f, point.y - 4.5f, 9.0f, 9.0f);
+                g.setColour(active ? juce::Colours::white : colour);
+                g.fillEllipse(point.x - 3.0f, point.y - 3.0f, 6.0f, 6.0f);
+            }
+        }
+
+        const auto free = value(4) >= 0.5f;
+        drawChip(g, chip(Mode::Shape), shapeName(), false);
+        drawChip(g, chip(Mode::Free), free ? "FREE" : "SYNC", free);
+        if (stepMode())
+            drawChip(g, chip(Mode::StepCount), "<  " + juce::String(stepCount()) + "  >", false);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        endGestures();
+        dragMode = modeAt(event.position);
+        if (dragMode == Mode::None)
+            return;
+        if (dragMode == Mode::Steps)
+        {
+            paintStep(event.position);
+            return;
+        }
+        if (const auto index = parameterOf(dragMode); index >= 0 && dragMode != Mode::Shape && dragMode != Mode::Free
+            && dragMode != Mode::StepCount && parameters[static_cast<std::size_t>(index)] != nullptr)
+        {
+            gestureParameter = parameters[static_cast<std::size_t>(index)];
+            gestureParameter->beginChangeGesture();
+            startValue = gestureParameter->getValue();
+            publish(static_cast<std::size_t>(index));
+        }
+        repaint();
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (dragMode == Mode::Steps)
+        {
+            paintStep(event.position);
+            return;
+        }
+        if (gestureParameter == nullptr)
+            return;
+        const auto plot = plotArea();
+        auto next = startValue;
+        if (dragMode == Mode::Gain)
+            next = (plot.getBottom() - event.position.y) / plot.getHeight();
+        else if (dragMode == Mode::Offset)
+            next = ((plot.getCentreY() - event.position.y) / (plot.getHeight() * 0.5f) + 1.0f) * 0.5f;
+        else if (dragMode == Mode::Rate)
+            next = startValue + static_cast<float>(event.getDistanceFromDragStartX()) / (plot.getWidth() * (event.mods.isShiftDown() ? 8.0f : 1.0f));
+        const auto snapped = gestureParameter->convertTo0to1(gestureParameter->convertFrom0to1(juce::jlimit(0.0f, 1.0f, next)));
+        gestureParameter->setValueNotifyingHost(snapped);
+        publish(static_cast<std::size_t>(parameterOf(dragMode)));
+        repaint();
+    }
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        const auto mode = dragMode;
+        endGestures();
+        dragMode = Mode::None;
+        repaint();
+        if (event.getDistanceFromDragStart() > 3)
+            return;
+        if (mode == Mode::Free)
+        {
+            if (auto* parameter = parameters[4])
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(parameter->getValue() >= 0.5f ? 0.0f : 1.0f);
+                parameter->endChangeGesture();
+            }
+        }
+        else if (mode == Mode::StepCount && parameters[5] != nullptr)
+        {
+            const auto area = chip(Mode::StepCount);
+            const auto delta = event.position.x < area.getCentreX() ? -1 : 1;
+            setParameterValue(owner, idPrefix + "step_count", static_cast<float>(juce::jlimit(2, synth::lfoMaxSteps, stepCount() + delta)));
+        }
+        else if (mode == Mode::Shape && parameters[0] != nullptr && specifications[0] != nullptr)
+        {
+            juce::PopupMenu menu;
+            const auto current = juce::roundToInt(parameters[0]->convertFrom0to1(parameters[0]->getValue()));
+            for (std::size_t i = 0; i < specifications[0]->choices.size(); ++i)
+                menu.addItem(static_cast<int>(i) + 1, specifications[0]->choices[i], true, static_cast<int>(i) == current);
+            menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<LfoCurveDisplay>(this)](int result) {
+                if (result <= 0 || safe == nullptr || safe->parameters[0] == nullptr)
+                    return;
+                safe->parameters[0]->beginChangeGesture();
+                safe->parameters[0]->setValueNotifyingHost(safe->parameters[0]->convertTo0to1(static_cast<float>(result - 1)));
+                safe->parameters[0]->endChangeGesture();
+            });
+        }
+    }
+    void mouseDoubleClick(const juce::MouseEvent& event) override
+    {
+        const auto mode = modeAt(event.position);
+        const auto index = parameterOf(mode);
+        if (index < 0 || mode == Mode::Shape || mode == Mode::Free || mode == Mode::StepCount
+            || parameters[static_cast<std::size_t>(index)] == nullptr)
+            return;
+        auto* parameter = parameters[static_cast<std::size_t>(index)];
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->getDefaultValue());
+        parameter->endChangeGesture();
+    }
+
+private:
+    enum class Mode { None, Shape, Free, Gain, Offset, Rate, Steps, StepCount };
+    static int parameterOf(Mode mode)
+    {
+        switch (mode)
+        {
+            case Mode::Shape: return 0;
+            case Mode::Gain: return 1;
+            case Mode::Offset: return 2;
+            case Mode::Rate: return 3;
+            case Mode::Free: return 4;
+            case Mode::StepCount: return 5;
+            default: return -1;
+        }
+    }
+    static void drawChip(juce::Graphics& g, juce::Rectangle<float> area, const juce::String& text, bool lit)
+    {
+        g.setColour(juce::Colour(0xff0b0e0f).withAlpha(0.82f));
+        g.fillRoundedRectangle(area, 2.0f);
+        drawText(g, text, area.toNearestInt(), 7.5f, lit ? lettering : lettering.withAlpha(0.8f), juce::Justification::centred, lit);
+    }
+    bool stepMode() const { return shapeName() == "STEP"; }
+    int stepCount() const
+    {
+        return parameters[5] != nullptr ? juce::jlimit(2, synth::lfoMaxSteps, juce::roundToInt(parameters[5]->convertFrom0to1(parameters[5]->getValue()))) : 8;
+    }
+    juce::Rectangle<float> plotArea() const { return getLocalBounds().toFloat().reduced(14.0f, 6.0f).withTrimmedTop(2.0f); }
+    juce::Rectangle<float> chip(Mode mode) const
+    {
+        const auto plot = plotArea();
+        switch (mode)
+        {
+            case Mode::Shape: return { plot.getX() + 1, 4.0f, 52.0f, 10.0f };
+            case Mode::StepCount: return { plot.getRight() - 90, 4.0f, 44.0f, 10.0f };
+            default: return { plot.getRight() - 41, 4.0f, 40.0f, 10.0f };
+        }
+    }
+    juce::Point<float> dotPosition(int dot) const
+    {
+        const auto plot = plotArea();
+        return dot == 0 ? juce::Point<float>(plot.getRight() + 7.0f, plot.getBottom() - value(1) * plot.getHeight())
+                        : juce::Point<float>(plot.getX() - 7.0f, plot.getCentreY() - value(2, true) * plot.getHeight() * 0.5f);
+    }
+    Mode modeAt(juce::Point<float> position) const
+    {
+        if (chip(Mode::Shape).expanded(1.0f).contains(position)) return Mode::Shape;
+        if (chip(Mode::Free).expanded(1.0f).contains(position)) return Mode::Free;
+        if (stepMode())
+        {
+            if (chip(Mode::StepCount).expanded(1.0f).contains(position)) return Mode::StepCount;
+            return plotArea().expanded(2.0f).contains(position) ? Mode::Steps : Mode::None;
+        }
+        if (position.getDistanceFrom(dotPosition(0)) <= 8.0f) return Mode::Gain;
+        if (position.getDistanceFrom(dotPosition(1)) <= 8.0f) return Mode::Offset;
+        return getLocalBounds().contains(position.roundToInt()) ? Mode::Rate : Mode::None;
+    }
+    // The normalized value of a parameter; bipolar ones are mapped to -1..1.
+    float value(std::size_t index, bool bipolar = false) const
+    {
+        const auto position = parameters[index] != nullptr ? parameters[index]->getValue() : 0.0f;
+        return bipolar ? position * 2.0f - 1.0f : position;
+    }
+    float stepValue(int index) const
+    {
+        auto* parameter = stepParameters[static_cast<std::size_t>(index)];
+        return parameter != nullptr ? parameter->convertFrom0to1(parameter->getValue()) : 0.0f;
+    }
+    void paintSteps(juce::Graphics& g, juce::Rectangle<float> plot) const
+    {
+        const auto count = stepCount();
+        const auto column = plot.getWidth() / static_cast<float>(count);
+        const auto centreY = plot.getCentreY();
+        juce::Path outline;
+        for (int i = 0; i < count; ++i)
+        {
+            const auto x = plot.getX() + column * static_cast<float>(i);
+            const auto y = centreY - juce::jlimit(-1.0f, 1.0f, stepValue(i)) * plot.getHeight() * 0.5f;
+            g.setColour(colour.withAlpha(0.2f));
+            g.fillRect(juce::Rectangle<float>(x + 1, std::min(y, centreY), column - 2, std::abs(y - centreY)));
+            if (i == 0) outline.startNewSubPath(x, y); else outline.lineTo(x, y);
+            outline.lineTo(x + column, y);
+        }
+        g.setColour(colour);
+        g.strokePath(outline, juce::PathStrokeType(1.6f));
+    }
+    // Sets the step under the mouse; dragging across the columns draws a curve.
+    void paintStep(juce::Point<float> position)
+    {
+        const auto plot = plotArea();
+        const auto count = stepCount();
+        const auto index = juce::jlimit(0, count - 1, static_cast<int>((position.x - plot.getX()) / (plot.getWidth() / static_cast<float>(count))));
+        auto* parameter = stepParameters[static_cast<std::size_t>(index)];
+        if (parameter == nullptr)
+            return;
+        if (openSteps.insert(index).second)
+            parameter->beginChangeGesture();
+        const auto physical = juce::jlimit(-1.0f, 1.0f, (plot.getCentreY() - position.y) / (plot.getHeight() * 0.5f));
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(physical));
+        readout("Step " + juce::String(index + 1), juce::String(physical * 100.0f, 0) + " %");
+        repaint();
+    }
+    juce::String shapeName() const
+    {
+        if (specifications[0] == nullptr || parameters[0] == nullptr)
+            return {};
+        const auto index = juce::jlimit(0, static_cast<int>(specifications[0]->choices.size()) - 1,
+                                        juce::roundToInt(parameters[0]->convertFrom0to1(parameters[0]->getValue())));
+        return juce::String(specifications[0]->choices[static_cast<std::size_t>(index)]).toUpperCase();
+    }
+    std::vector<float> preview(int count) const
+    {
+        synth::Lfo lfo;
+        lfo.prepare(static_cast<double>(count) * 0.5); // 1 Hz, so two cycles fill the display
+        lfo.setRateHz(1.0f);
+        const auto name = shapeName();
+        static const std::map<juce::String, synth::LfoShape> shapes {
+            { "SINE", synth::LfoShape::Sine }, { "TRIANGLE", synth::LfoShape::Triangle }, { "SAWUP", synth::LfoShape::SawUp },
+            { "SAWDOWN", synth::LfoShape::SawDown }, { "SQUARE", synth::LfoShape::Square },
+            { "SAMPLEHOLD", synth::LfoShape::SampleHold }, { "NOISE", synth::LfoShape::Noise }, { "STEP", synth::LfoShape::Step } };
+        const auto found = shapes.find(name);
+        lfo.setShape(found != shapes.end() ? found->second : synth::LfoShape::Sine);
+        lfo.resetPhase();
+        std::vector<float> points;
+        points.reserve(static_cast<std::size_t>(count));
+        points.push_back(lfo.getValue());
+        for (int i = 1; i < count; ++i)
+            points.push_back(lfo.process());
+        return points;
+    }
+    std::array<float, 8> currentSignature() const
+    {
+        std::array<float, 8> result {};
+        for (std::size_t i = 0; i < parameters.size(); ++i)
+            result[i] = parameters[i] != nullptr ? parameters[i]->getValue() : 0.0f;
+        for (std::size_t i = 0; i < stepParameters.size(); ++i)
+            if (stepParameters[i] != nullptr)
+                result[6] += stepParameters[i]->getValue() * static_cast<float>(i + 1);
+        result[7] = readParameterValue(owner, idPrefix + "step_smooth");
+        return result;
+    }
+    void publish(std::size_t index)
+    {
+        if (parameters[index] != nullptr && specifications[index] != nullptr && readout)
+            readout(specifications[index]->name, formattedValue(*specifications[index], parameters[index]->convertFrom0to1(parameters[index]->getValue())));
+    }
+    void endGestures()
+    {
+        if (gestureParameter != nullptr)
+            gestureParameter->endChangeGesture();
+        gestureParameter = nullptr;
+        for (const auto index : openSteps)
+            if (auto* parameter = stepParameters[static_cast<std::size_t>(index)])
+                parameter->endChangeGesture();
+        openSteps.clear();
+    }
+
+    SynthAudioProcessor& owner;
+    std::string idPrefix;
+    std::array<juce::RangedAudioParameter*, 6> parameters {};
+    std::array<const synth::ParameterSpec*, 6> specifications {};
+    std::array<juce::RangedAudioParameter*, synth::lfoMaxSteps> stepParameters {};
+    std::set<int> openSteps;
+    std::array<float, 8> signature {};
+    juce::Colour colour;
+    ReadoutCallback readout;
+    Mode dragMode = Mode::None;
+    juce::RangedAudioParameter* gestureParameter = nullptr;
+    float startValue = 0.0f;
+};
+
+// The dot in a panel header that carries the source: drag it onto a knob to modulate that knob.
+class ModulationSourceHandle final : public ModulationDisplay
+{
+public:
+    ModulationSourceHandle(SynthAudioProcessor& processor, int slotNumber) : owner(processor), slot(slotNumber)
+    {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        setTitle(modulationName(slot) + " modulation source");
+        setDescription("Drag onto a knob to modulate it");
+        used = routesInUse();
+    }
+    void refresh() override
+    {
+        const auto next = routesInUse();
+        if (next != used)
+        {
+            used = next;
+            repaint();
+        }
+    }
+    void paint(juce::Graphics& g) override
+    {
+        const auto area = getLocalBounds().toFloat().reduced(1.0f);
+        const auto colour = modulationColour(slot);
+        g.setColour(juce::Colour(0xff0b0e0f));
+        g.fillEllipse(area);
+        g.setGradientFill(juce::ColourGradient(colour.brighter(0.35f), area.getCentreX(), area.getY(),
+                                               colour.darker(0.25f), area.getCentreX(), area.getBottom(), false));
+        g.fillEllipse(area.reduced(1.5f));
+        for (int i = 0; i < used; ++i) // one pip for each route in use
+        {
+            g.setColour(juce::Colour(0xff0b0e0f));
+            g.fillEllipse(area.getCentreX() - 2.6f + static_cast<float>(i) * 3.4f - (used - 1) * 1.7f, area.getCentreY() - 1.2f, 2.4f, 2.4f);
+        }
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (event.getDistanceFromDragStart() < 4)
+            return;
+        auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this);
+        if (container == nullptr || container->isDragAndDropActive())
+            return;
+        juce::Image image(juce::Image::ARGB, 16, 16, true);
+        {
+            juce::Graphics g(image);
+            g.setColour(modulationColour(slot).withAlpha(0.9f));
+            g.fillEllipse(1.0f, 1.0f, 14.0f, 14.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.8f));
+            g.drawEllipse(1.0f, 1.0f, 14.0f, 14.0f, 1.0f);
+        }
+        const juce::Point<int> offset(-8, -8);
+        container->startDragging(juce::String(modulationDragPrefix) + juce::String(slot), this, juce::ScaledImage(image), false, &offset);
+    }
+
+private:
+    int routesInUse() const
+    {
+        int count = 0;
+        for (int route = 1; route <= 2; ++route)
+            if (const auto* destination = owner.getValueTreeState().getRawParameterValue(
+                    "transmod." + std::to_string(slot) + ".route." + std::to_string(route) + ".destination"))
+                count += juce::roundToInt(destination->load()) != 0 ? 1 : 0;
+        return count;
+    }
+    SynthAudioProcessor& owner;
+    int slot;
+    int used = 0;
+};
+
+// Lists every route of the instrument: source, destination and amount, in as many rows as there are routes. A source
+// reaches a destination through that destination's depth on the source's slot, so there is no limit of two targets.
+// Routes saved by older presets (the destination and amount pairs) are listed and edited here too.
+class ModulationMatrixPanel final : public ModulationDisplay
+{
+public:
+    ModulationMatrixPanel(SynthAudioProcessor& processor, ReadoutCallback readoutCallback)
+        : owner(processor), readout(std::move(readoutCallback))
+    {
+        setTitle("Modulation matrix");
+        setDescription("All modulation routes: source, destination and amount");
+        rebuild();
+    }
+    ~ModulationMatrixPanel() override { endGesture(); }
+
+    void refresh() override
+    {
+        const auto before = rows;
+        const auto amountsBefore = amounts;
+        rebuild();
+        if (rows != before || amounts != amountsBefore)
+            repaint();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
+        const auto labelColour = lettering.withAlpha(0.55f);
+        drawText(g, "SOURCE", { sourceX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
+        drawText(g, "DESTINATION", { destinationX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
+        drawText(g, "AMOUNT", { barX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
+        drawText(g, juce::String(rows.size()) + (rows.size() == 1 ? " route" : " routes"), { barX + barWidth - 270, 1, 90, headerHeight },
+                 7.5f, labelColour, juce::Justification::centredRight);
+        const auto add = addArea();
+        g.setColour(juce::Colour(0xff263033));
+        g.fillRoundedRectangle(add, 2.0f);
+        drawText(g, "+ ADD ROUTE", add.toNearestInt(), 7.5f, lettering, juce::Justification::centred, true);
+
+        if (rows.empty())
+        {
+            drawText(g, "Drag a source dot onto any knob, or press + ADD ROUTE.", { 0, headerHeight + 22, getWidth(), 14 }, 9.0f,
+                     lettering.withAlpha(0.5f));
+            return;
+        }
+        for (int visible = 0; visible < visibleRows; ++visible)
+        {
+            const auto index = firstRow + visible;
+            if (index >= static_cast<int>(rows.size()))
+                break;
+            const auto& row = rows[static_cast<std::size_t>(index)];
+            const auto y = headerHeight + visible * rowHeight;
+            if (visible % 2 == 0)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.035f));
+                g.fillRect(2, y, getWidth() - 4, rowHeight);
+            }
+            const auto colour = modulationColour(row.slot);
+            g.setColour(colour);
+            g.fillEllipse(static_cast<float>(sourceX), static_cast<float>(y + 4), 8.0f, 8.0f);
+            drawText(g, sourceLabel(row.slot), { sourceX + 13, y, 140, rowHeight }, 9.0f, lettering, juce::Justification::centredLeft);
+            drawText(g, destinationLabel(row), { destinationX, y, destinationWidth, rowHeight }, 9.0f, lettering, juce::Justification::centredLeft);
+            const auto amount = amounts[static_cast<std::size_t>(index)];
+            const auto track = juce::Rectangle<float>(static_cast<float>(barX), static_cast<float>(y + 5), static_cast<float>(barWidth - 52), 6.0f);
+            g.setColour(juce::Colour(0xff0b0e0f));
+            g.fillRoundedRectangle(track, 3.0f);
+            g.setColour(juce::Colours::white.withAlpha(0.25f));
+            g.drawVerticalLine(juce::roundToInt(track.getCentreX()), track.getY() - 1, track.getBottom() + 1);
+            const auto x = track.getCentreX() + amount * track.getWidth() * 0.5f;
+            g.setColour(colour);
+            g.fillRoundedRectangle(juce::Rectangle<float>(std::min(x, track.getCentreX()), track.getY(), std::abs(x - track.getCentreX()), track.getHeight()), 2.0f);
+            g.fillEllipse(x - 4.0f, track.getCentreY() - 4.0f, 8.0f, 8.0f);
+            drawText(g, juce::String(juce::roundToInt(amount * 100.0f)) + " %", { barX + barWidth - 46, y, 40, rowHeight }, 8.5f,
+                     lettering.withAlpha(0.85f), juce::Justification::centredRight);
+            drawText(g, "x", { removeX, y, 14, rowHeight }, 10.0f, lettering.withAlpha(0.6f));
+        }
+        if (static_cast<int>(rows.size()) > visibleRows)
+            drawText(g, "scroll", { getWidth() - 40, getHeight() - 11, 36, 10 }, 7.0f, lettering.withAlpha(0.35f), juce::Justification::centredRight);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        endGesture();
+        if (addArea().contains(event.position))
+        {
+            chooseNewRoute();
+            return;
+        }
+        const auto index = rowAt(event.position);
+        if (index < 0)
+            return;
+        const auto& row = rows[static_cast<std::size_t>(index)];
+        const auto x = static_cast<int>(event.position.x);
+        if (x >= removeX)
+            removeRow(row);
+        else if (x >= barX)
+        {
+            draggedRow = index;
+            beginGesture(row);
+            dragAmount(event.position.x);
+        }
+        else if (x >= destinationX)
+            chooseDestination(row);
+        else if (row.slot > 4)
+            chooseSlotSource(row.slot);
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (draggedRow >= 0)
+            dragAmount(event.position.x);
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        endGesture();
+        draggedRow = -1;
+    }
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
+    {
+        const auto limit = std::max(0, static_cast<int>(rows.size()) - visibleRows);
+        firstRow = juce::jlimit(0, limit, firstRow + (wheel.deltaY > 0 ? -1 : 1));
+        repaint();
+    }
+
+private:
+    struct Row
+    {
+        int slot = 0;
+        int destination = 0; // index into the destination catalog
+        int route = 0;       // 0: a depth; 1 or 2: an older route entry (destination and amount)
+        bool operator==(const Row&) const = default;
+    };
+    static constexpr int headerHeight = 13;
+    static constexpr int rowHeight = 17;
+    static constexpr int visibleRows = 5;
+    static constexpr int sourceX = 8;
+    static constexpr int destinationX = 170;
+    static constexpr int destinationWidth = 300;
+    static constexpr int barX = 490;
+    static constexpr int barWidth = 300;
+    static constexpr int removeX = 810;
+
+    juce::Rectangle<float> addArea() const { return { static_cast<float>(getWidth() - 96), 1.0f, 90.0f, 11.0f }; }
+    int rowAt(juce::Point<float> position) const
+    {
+        const auto visible = static_cast<int>((position.y - headerHeight) / rowHeight);
+        if (position.y < headerHeight || visible < 0 || visible >= visibleRows)
+            return -1;
+        const auto index = firstRow + visible;
+        return index < static_cast<int>(rows.size()) ? index : -1;
+    }
+    juce::String sourceLabel(int slot) const
+    {
+        if (slot <= 4)
+            return modulationName(slot);
+        const auto* spec = synth::findParameterSpec("transmod." + std::to_string(slot) + ".source");
+        const auto index = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
+        if (spec != nullptr && index >= 0 && index < static_cast<int>(spec->choices.size()))
+            return juce::String(spec->choices[static_cast<std::size_t>(index)]);
+        return "Mod " + juce::String(slot);
+    }
+    juce::String destinationLabel(const Row& row) const
+    {
+        const auto& catalog = synth::modulationDestinationCatalog();
+        return juce::String(catalog[static_cast<std::size_t>(row.destination)].label) + (row.route > 0 ? "   (older route)" : "");
+    }
+    std::string routeId(const Row& row, const char* suffix) const
+    {
+        return "transmod." + std::to_string(row.slot) + ".route." + std::to_string(row.route) + "." + suffix;
+    }
+    float amountOf(const Row& row) const
+    {
+        if (row.route == 0)
+            return modulationAmount(owner, row.slot, row.destination);
+        return readParameterValue(owner, routeId(row, "amount"));
+    }
+    void rebuild()
+    {
+        rows.clear();
+        amounts.clear();
+        const auto count = static_cast<int>(synth::modulationDestinationCatalog().size());
+        for (int slot = 1; slot <= synth::transModSlotCount; ++slot)
+        {
+            for (int destination = 0; destination < count; ++destination)
+                if (std::abs(modulationAmount(owner, slot, destination)) > 0.0001f)
+                    rows.push_back({ slot, destination, 0 });
+            for (int route = 1; route <= 2; ++route)
+            {
+                const auto selection = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".route." + std::to_string(route) + ".destination")) - 1;
+                if (selection >= 0 && selection < count)
+                    rows.push_back({ slot, selection, route });
+            }
+        }
+        for (const auto& row : rows)
+            amounts.push_back(amountOf(row));
+        firstRow = juce::jlimit(0, std::max(0, static_cast<int>(rows.size()) - visibleRows), firstRow);
+    }
+    void beginGesture(const Row& row)
+    {
+        const auto id = row.route == 0 ? modulationDepthId(row.slot, row.destination) : routeId(row, "amount");
+        gestureParameter = owner.getValueTreeState().getParameter(id);
+        if (gestureParameter != nullptr)
+            gestureParameter->beginChangeGesture();
+        activateModulationSlot(owner, row.slot);
+    }
+    void endGesture()
+    {
+        if (gestureParameter != nullptr)
+            gestureParameter->endChangeGesture();
+        gestureParameter = nullptr;
+    }
+    void dragAmount(float x)
+    {
+        if (gestureParameter == nullptr || draggedRow < 0 || draggedRow >= static_cast<int>(rows.size()))
+            return;
+        const auto amount = std::round(juce::jlimit(-1.0f, 1.0f, ((x - static_cast<float>(barX)) / static_cast<float>(barWidth - 52)) * 2.0f - 1.0f) * 100.0f) / 100.0f;
+        const auto& row = rows[static_cast<std::size_t>(draggedRow)];
+        if (row.route == 0)
+        {
+            const auto id = modulationDepthId(row.slot, row.destination);
+            gestureParameter->setValueNotifyingHost(gestureParameter->convertTo0to1(amount * modulationDepthScale(owner, id)));
+        }
+        else
+            gestureParameter->setValueNotifyingHost(gestureParameter->convertTo0to1(amount));
+        amounts[static_cast<std::size_t>(draggedRow)] = amount;
+        readout(sourceLabel(row.slot), destinationLabel(row) + "  " + juce::String(juce::roundToInt(amount * 100.0f)) + " %");
+        repaint();
+    }
+    void removeRow(const Row& row)
+    {
+        if (row.route == 0)
+            setParameterValue(owner, modulationDepthId(row.slot, row.destination), 0.0f);
+        else
+        {
+            setParameterValue(owner, routeId(row, "destination"), 0.0f);
+            setParameterValue(owner, routeId(row, "amount"), 0.0f);
+        }
+        rebuild();
+        repaint();
+    }
+    // Every destination, grouped so the list stays short.
+    static void buildDestinationMenu(juce::PopupMenu& menu, int idBase, int current)
+    {
+        const auto& catalog = synth::modulationDestinationCatalog();
+        juce::PopupMenu oscillators, filters, parts, lfos;
+        std::vector<std::pair<int, juce::String>> general;
+        for (int i = 0; i < static_cast<int>(catalog.size()); ++i)
+        {
+            const juce::String label(catalog[static_cast<std::size_t>(i)].label);
+            const auto ticked = i == current;
+            if (label.length() > 3 && (label[0] == 'A' || label[0] == 'B') && (label[1] == '1' || label[1] == '2') && label[2] == ' ')
+                oscillators.addItem(idBase + i, label, true, ticked);
+            else if (label.startsWith("Filter ") && label.length() > 8 && label[7] >= 'A' && label[7] <= 'B')
+                filters.addItem(idBase + i, label, true, ticked);
+            else if (label.startsWith("Part "))
+                parts.addItem(idBase + i, label, true, ticked);
+            else if (label.startsWith("LFO "))
+                lfos.addItem(idBase + i, label, true, ticked);
+            else
+                general.emplace_back(i, label);
+        }
+        for (const auto& [i, label] : general)
+            menu.addItem(idBase + i, label, true, i == current);
+        menu.addSeparator();
+        menu.addSubMenu("Oscillators", oscillators);
+        menu.addSubMenu("Filters", filters);
+        menu.addSubMenu("Parts", parts);
+        menu.addSubMenu("LFOs", lfos);
+    }
+    void chooseDestination(Row row)
+    {
+        juce::PopupMenu menu;
+        buildDestinationMenu(menu, 1000, row.destination);
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this), row](int result) {
+            if (result < 1000 || safe == nullptr)
+                return;
+            safe->moveRow(row, result - 1000);
+        });
+    }
+    void moveRow(const Row& row, int destination)
+    {
+        if (destination == row.destination)
+            return;
+        if (row.route == 0)
+        {
+            const auto amount = modulationAmount(owner, row.slot, row.destination);
+            setParameterValue(owner, modulationDepthId(row.slot, row.destination), 0.0f);
+            setModulationAmount(owner, row.slot, destination, amount);
+        }
+        else
+            setParameterValue(owner, routeId(row, "destination"), static_cast<float>(destination + 1));
+        rebuild();
+        repaint();
+    }
+    // The sources a route can come from: the four with their own slot, then every other source in the list.
+    void chooseSlotSource(int slot)
+    {
+        juce::PopupMenu menu;
+        const auto* spec = synth::findParameterSpec("transmod.5.source");
+        if (spec == nullptr)
+            return;
+        const auto current = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
+        for (int i = 1; i < static_cast<int>(spec->choices.size()); ++i)
+            menu.addItem(i, spec->choices[static_cast<std::size_t>(i)], true, i == current);
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this), slot](int result) {
+            if (result <= 0 || safe == nullptr)
+                return;
+            setParameterValue(safe->owner, "transmod." + std::to_string(slot) + ".source", static_cast<float>(result));
+            safe->rebuild();
+            safe->repaint();
+        });
+    }
+    void chooseNewRoute()
+    {
+        juce::PopupMenu menu;
+        for (int slot = 1; slot <= 4; ++slot)
+            menu.addItem(slot, modulationName(slot));
+        menu.addSeparator();
+        const auto* spec = synth::findParameterSpec("transmod.5.source");
+        if (spec != nullptr)
+            for (int i = 1; i < static_cast<int>(spec->choices.size()); ++i)
+                if (i != fixedModulationSource(1) && i != fixedModulationSource(2) && i != fixedModulationSource(3) && i != fixedModulationSource(4))
+                    menu.addItem(100 + i, spec->choices[static_cast<std::size_t>(i)]);
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this)](int result) {
+            if (result <= 0 || safe == nullptr)
+                return;
+            int slot = result <= 4 ? result : safe->slotForSource(result - 100);
+            if (slot <= 0)
+            {
+                safe->readout("Modulation", "All four free source slots are in use");
+                return;
+            }
+            juce::PopupMenu destinations;
+            buildDestinationMenu(destinations, 1000, -1);
+            destinations.showMenuAsync(optionsAtMouse(), [safe, slot, source = result](int chosen) {
+                if (chosen < 1000 || safe == nullptr)
+                    return;
+                if (source > 4)
+                    setParameterValue(safe->owner, "transmod." + std::to_string(slot) + ".source", static_cast<float>(source - 100));
+                setModulationAmount(safe->owner, slot, chosen - 1000, 0.5f);
+                safe->rebuild();
+                safe->firstRow = std::max(0, static_cast<int>(safe->rows.size()) - visibleRows);
+                safe->repaint();
+            });
+        });
+    }
+    // The slot (5 to 8) that already carries this source, or the first one nothing uses; 0 if none is left.
+    int slotForSource(int source) const
+    {
+        int empty = 0;
+        for (int slot = 5; slot <= synth::transModSlotCount; ++slot)
+        {
+            const auto current = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
+            if (current == source)
+                return slot;
+            const auto used = std::any_of(rows.begin(), rows.end(), [slot](const Row& row) { return row.slot == slot; });
+            if (empty == 0 && !used)
+                empty = slot;
+        }
+        return empty;
+    }
+
+    SynthAudioProcessor& owner;
+    ReadoutCallback readout;
+    std::vector<Row> rows;
+    std::vector<float> amounts;
+    int firstRow = 0;
+    int draggedRow = -1;
+    juce::RangedAudioParameter* gestureParameter = nullptr;
+};
 } // namespace
 
-class SynthAudioProcessorEditor::ClassicSurface final : public juce::Component, private juce::Timer
+class SynthAudioProcessorEditor::ClassicSurface final : public juce::Component, public juce::DragAndDropContainer, private juce::Timer
 {
 public:
     explicit ClassicSurface(SynthAudioProcessor& processor) : owner(processor)
@@ -969,12 +2260,26 @@ private:
         juce::Colour colour;
     };
     void buildControls();
+    int bindingStateNow() const
+    {
+        return (owner.getEffectiveParameterValue("global.sync") >= 0.5f ? 1 : 0)
+            | (owner.getEffectiveParameterValue("lfo.free") >= 0.5f ? 2 : 0)
+            | (owner.getEffectiveParameterValue("lfo.2.free") >= 0.5f ? 4 : 0)
+            | (juce::roundToInt(owner.getEffectiveParameterValue("lfo.shape")) == 7 ? 8 : 0)
+            | (juce::roundToInt(owner.getEffectiveParameterValue("lfo.2.shape")) == 7 ? 16 : 0);
+    }
     void add(const std::string& id, const juce::String& label, Style style, int x, int y, int width, int height);
     void caption(const juce::String& value, int x, int y, int width, int height = 11, float size = 8.7f,
                  juce::Colour colour = lettering);
     ClassicAction* action(const juce::String& value, int x, int y, int width, int height,
                           std::function<void()> callback, bool lcd = false, const juce::String& accessibleTitle = {}, bool selectable = false);
     void envelope(const std::string& prefix, int x, int y, int width);
+    static constexpr int modulationPanelWidth = 209;
+    static constexpr int modulationPanelTop = 352;
+    static int modulationPanelX(int index) { return 31 + index * 213; }
+    void modulationEnvelope(const std::string& prefix, int slot, int x);
+    void modulationHandle(int slot, int x, int y);
+    void addDisplay(std::unique_ptr<ModulationDisplay> display, int x, int y, int width, int height);
     void oscillator(int slot, int x);
     void modulationRoutes(int slot, int x, int y, int width);
     void lfo(int number, int x);
@@ -1018,6 +2323,7 @@ private:
     SynthAudioProcessor& owner;
     std::vector<std::unique_ptr<ClassicParameterControl>> controls;
     std::vector<std::unique_ptr<ClassicAction>> actions;
+    std::vector<std::unique_ptr<ModulationDisplay>> displays;
     std::vector<Caption> captions;
     std::map<std::string, float> sectionClipboard;
     juce::String clipboardSection;
@@ -1097,6 +2403,30 @@ void SynthAudioProcessorEditor::ClassicSurface::envelope(const std::string& pref
     caption("10", x + 3, y + 14, 14, 10, 7);
     caption("0", x + 3, y + 75, 14, 10, 7);
 }
+void SynthAudioProcessorEditor::ClassicSurface::addDisplay(std::unique_ptr<ModulationDisplay> display, int x, int y, int width, int height)
+{
+    display->setBounds(x, y, width, height);
+    addAndMakeVisible(*display);
+    displays.push_back(std::move(display));
+}
+void SynthAudioProcessorEditor::ClassicSurface::modulationEnvelope(const std::string& prefix, int slot, int x)
+{
+    addDisplay(std::make_unique<EnvelopeCurveDisplay>(owner, prefix, slot,
+                                                      [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
+               x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 88);
+    const std::array<std::string, 4> suffixes { "attack_ms", "decay_ms", "sustain", "release_ms" };
+    const std::array<juce::String, 4> labels { "ATTACK", "DECAY", "SUSTAIN", "RELEASE" };
+    for (std::size_t i = 0; i < 4; ++i)
+        add(prefix + suffixes[i], labels[i], Style::Knob, x + 5 + static_cast<int>(i) * 50, modulationPanelTop + 109, 44, 53);
+    action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
+           [this, slot, prefix] { sectionMenu("Modulation Envelope", { prefix, "transmod." + std::to_string(slot) + "." }); }, false,
+           "Modulation envelope " + juce::String(slot) + " menu");
+    modulationHandle(slot, x + modulationPanelWidth - 38, modulationPanelTop + 2);
+}
+void SynthAudioProcessorEditor::ClassicSurface::modulationHandle(int slot, int x, int y)
+{
+    addDisplay(std::make_unique<ModulationSourceHandle>(owner, slot), x, y, 13, 13);
+}
 void SynthAudioProcessorEditor::ClassicSurface::oscillator(int slot, int x)
 {
     const auto prefix = "layer." + std::to_string(selectedPart + 1) + ".osc." + std::to_string(slot) + ".";
@@ -1135,27 +2465,33 @@ void SynthAudioProcessorEditor::ClassicSurface::modulationRoutes(int slot, int x
 void SynthAudioProcessorEditor::ClassicSurface::lfo(int number, int x)
 {
     const auto prefix = number == 1 ? std::string("lfo.") : std::string("lfo.2.");
-    caption("WAVE", x + 5, 375, 34);
-    add(prefix + "shape", "Wave", Style::Wave, x + 38, 374, 30, 17);
-    caption("FREE", x + 78, 375, 33);
-    add(prefix + "free", "Free", Style::Switch, x + 110, 373, 24, 19);
     const auto synchronized = owner.getEffectiveParameterValue("global.sync") >= 0.5f
         && owner.getEffectiveParameterValue(prefix + "free") < 0.5f;
-    add(prefix + (synchronized ? "sync_division" : "rate_hz"), "RATE", Style::Knob, x + 10, 398, 42, 53);
-    add(prefix + "gain", "GAIN", Style::Knob, x + 55, 398, 42, 53);
-    add(prefix + "offset", "OFFSET", Style::Knob, x + 100, 398, 42, 53);
-    modulationRoutes(number + 2, x, 455, 144);
-    action("v", x + 125, 355, 15, 12, [this, prefix, number] { sectionMenu("LFO", { prefix, "transmod." + std::to_string(number + 2) + ".route." }); }, false, "LFO " + juce::String(number) + " menu");
+    const auto rateId = prefix + (synchronized ? "sync_division" : "rate_hz");
+    const auto stepShape = juce::roundToInt(owner.getEffectiveParameterValue(prefix + "shape")) == 7;
+    addDisplay(std::make_unique<LfoCurveDisplay>(owner, prefix, rateId, number + 2,
+                                                 [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
+               x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 80);
+    const auto y = modulationPanelTop + 101;
+    add(rateId, "RATE", Style::Knob, x + 5, y, 44, 53);
+    add(prefix + "gain", "GAIN", Style::Knob, x + 55, y, 44, 53);
+    add(prefix + "offset", "OFFSET", Style::Knob, x + 105, y, 44, 53);
+    if (stepShape)
+        add(prefix + "step_smooth", "SMOOTH", Style::Knob, x + 155, y, 44, 53);
+    else
+        add(prefix + "phase_degrees", "PHASE", Style::Knob, x + 155, y, 44, 53);
+    action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
+           [this, prefix, number] { sectionMenu("LFO", { prefix, "transmod." + std::to_string(number + 2) + "." }); }, false, "LFO " + juce::String(number) + " menu");
+    modulationHandle(number + 2, x + modulationPanelWidth - 38, modulationPanelTop + 2);
 }
 
 void SynthAudioProcessorEditor::ClassicSurface::buildControls()
 {
     lastProgramIndex = owner.getCurrentProgram();
-    controlBindingState = (owner.getEffectiveParameterValue("global.sync") >= 0.5f ? 1 : 0)
-        | (owner.getEffectiveParameterValue("lfo.free") >= 0.5f ? 2 : 0)
-        | (owner.getEffectiveParameterValue("lfo.2.free") >= 0.5f ? 4 : 0);
+    controlBindingState = bindingStateNow();
     controls.clear();
     actions.clear();
+    displays.clear();
     captions.clear();
     caption("Polyphony", 57, 5, 73, 18, 12);
     add("voice.polyphony", "Polyphony", Style::Field, 132, 6, 22, 16);
@@ -1203,37 +2539,24 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     caption("LEFT", 808, 152, 30);
     caption("RIGHT", 839, 152, 32);
 
-    envelope("mod_env.", 33, 373, 131);
-    envelope("mod_env.2.", 172, 373, 134);
-    modulationRoutes(1, 34, 455, 132);
-    modulationRoutes(2, 174, 455, 132);
-    action("v", 150, 355, 14, 12, [this] { sectionMenu("Modulation Envelope", { "mod_env.", "transmod.1.route." }); }, false, "Modulation envelope 1 menu");
-    action("v", 294, 355, 14, 12, [this] { sectionMenu("Modulation Envelope", { "mod_env.2.", "transmod.2.route." }); }, false, "Modulation envelope 2 menu");
-    lfo(1, 313);
-    lfo(2, 456);
-    for (int misc = 0; misc < 2; ++misc)
-    {
-        for (int source = 0; source < 2; ++source)
-        {
-            const auto slot = 5 + misc * 2 + source;
-            const auto x = 599 + misc * 138;
-            const auto y = 373 + source * 68;
-            caption("SOURCE", x + 2, y, 43);
-            add("transmod." + std::to_string(slot) + ".source", "Source", Style::Route, x + 45, y - 2, 87, 17);
-            modulationRoutes(slot, x + 1, y + 17, 144);
-        }
-    }
-    caption("BEND", 33, 518, 34, 11, 8);
-    caption("RANGE", 32, 529, 35, 11, 8);
-    add("voice.pitch_bend_range", "Bend Range", Style::Field, 37, 546, 22, 17);
-    caption("MONO", 797, 509, 46, 10, 8);
-    caption("LEGATO", 796, 519, 48, 10, 8);
-    add("voice.mode", "Mono Legato", Style::Switch, 843, 507, 28, 23);
-    add("voice.glide_ms", "PORTAMENTO", Style::Knob, 796, 533, 50, 53);
-    caption("MODE", 846, 530, 28);
-    add("voice.portamento_mode", "Portamento Mode", Style::Selector, 850, 544, 15, 27);
-    caption("N", 865, 543, 9, 12, 8);
-    caption("S", 865, 558, 9, 12, 8);
+    modulationEnvelope("mod_env.", 1, modulationPanelX(0));
+    modulationEnvelope("mod_env.2.", 2, modulationPanelX(1));
+    lfo(1, modulationPanelX(2));
+    lfo(2, modulationPanelX(3));
+    addDisplay(std::make_unique<ModulationMatrixPanel>(owner, [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
+               34, 541, 841, 98);
+    constexpr int low = modulationExtra;
+    caption("BEND", 33, 518 + low, 34, 11, 8);
+    caption("RANGE", 32, 529 + low, 35, 11, 8);
+    add("voice.pitch_bend_range", "Bend Range", Style::Field, 37, 546 + low, 22, 17);
+    caption("MONO", 797, 509 + low, 46, 10, 8);
+    caption("LEGATO", 796, 519 + low, 48, 10, 8);
+    add("voice.mode", "Mono Legato", Style::Switch, 843, 507 + low, 28, 23);
+    add("voice.glide_ms", "PORTAMENTO", Style::Knob, 796, 533 + low, 50, 53);
+    caption("MODE", 846, 530 + low, 28);
+    add("voice.portamento_mode", "Portamento Mode", Style::Selector, 850, 544 + low, 15, 27);
+    caption("N", 865, 543 + low, 9, 12, 8);
+    caption("S", 865, 558 + low, 9, 12, 8);
     lcdControls();
     if (auto* handler = getAccessibilityHandler()) handler->notifyAccessibilityEvent(juce::AccessibilityEvent::structureChanged);
 }
@@ -1393,12 +2716,11 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     panel(g, { 31, 134, 219, 121 }, "FILTER " + juce::String(selectedPart == 0 ? "A" : "B"), true, selectedPart);
     panel(g, { 31, 257, 219, 91 }, "FILTER CONTROL");
     panel(g, { 658, 134, 220, 129 }, "MIXER");
-    panel(g, { 31, 352, 138, 155 }, "MOD ENV 1");
-    panel(g, { 172, 352, 138, 155 }, "MOD ENV 2");
-    panel(g, { 313, 352, 140, 155 }, "LFO 1");
-    panel(g, { 456, 352, 140, 155 }, "LFO 2");
-    panel(g, { 599, 352, 136, 155 }, "MISC 1");
-    panel(g, { 738, 352, 140, 155 }, "MISC 2");
+    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 168 }, "MOD ENV 1");
+    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 168 }, "MOD ENV 2");
+    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 168 }, "LFO 1");
+    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 168 }, "LFO 2");
+    panel(g, { 31, 524, 847, 118 }, "MODULATION MATRIX");
 
     // The LCD bezel has nested machined edges surrounding the pale blue screen.
     auto bezel = juce::Rectangle<float>(255, 134, 399, 214);
@@ -1451,6 +2773,8 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     drawText(g, "NATIVE INSTRUMENT", { 676, 314, 100, 11 }, 7, silver, juce::Justification::centredLeft);
     drawText(g, JucePlugin_VersionString, { 846, 266, 29, 11 }, 8, silver);
 
+    g.saveState();
+    g.addTransform(juce::AffineTransform::translation(0.0f, static_cast<float>(modulationExtra)));
     g.setColour(juce::Colour(0xff141717));
     g.fillRoundedRectangle(30, 510, 102, 77, 4);
     const auto visual = owner.getUiVisualSnapshot();
@@ -1498,12 +2822,14 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff737a76));
         g.drawHorizontalLine(555, x + 2, x + 10);
     }
+    g.restoreState();
     for (const auto& item : captions)
         drawText(g, item.value, item.bounds, item.height, item.colour, juce::Justification::centred, false, item.bounds.getY() < 30);
 }
 
 int SynthAudioProcessorEditor::ClassicSurface::keyboardNoteAt(juce::Point<float> position) const
 {
+    position.y -= static_cast<float>(modulationExtra);
     if (position.x < 133 || position.x >= 787 || position.y < 511 || position.y >= 586) return -1;
     const std::array<int, 7> offsets { 0, 2, 4, 5, 7, 9, 11 };
     constexpr float width = 21.8f;
@@ -1528,7 +2854,7 @@ void SynthAudioProcessorEditor::ClassicSurface::noteAt(juce::Point<float> positi
     if (activeKey >= 0) owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, activeKey));
     activeKey = note;
     if (activeKey >= 0) owner.submitUiMidiMessage(juce::MidiMessage::noteOn(1, activeKey, static_cast<juce::uint8>(100)));
-    repaint(132, 510, 656, 77);
+    repaint(132, 510 + modulationExtra, 656, 77);
 }
 void SynthAudioProcessorEditor::ClassicSurface::mouseDown(const juce::MouseEvent& event)
 {
@@ -1538,7 +2864,7 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDown(const juce::MouseEvent
         noteAt(event.position);
         return;
     }
-    if (event.position.y >= 515 && event.position.y <= 583)
+    if (event.position.y >= 515 + modulationExtra && event.position.y <= 583 + modulationExtra)
     {
         if (event.position.x >= 75 && event.position.x <= 92) draggingWheel = 0;
         else if (event.position.x >= 103 && event.position.x <= 120) draggingWheel = 1;
@@ -1555,7 +2881,7 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDrag(const juce::MouseEvent
 {
     if (draggingWheel >= 0)
     {
-        const auto normalized = juce::jlimit(0.0f, 1.0f, (583 - event.position.y) / 68);
+        const auto normalized = juce::jlimit(0.0f, 1.0f, (583 + modulationExtra - event.position.y) / 68);
         if (auto* parameter = wheelParameter(draggingWheel))
             parameter->setValueNotifyingHost(normalized);
         announce(draggingWheel == 0 ? "Pitch Bend" : "Mod Wheel", juce::String(normalized * 100, 1) + " %");
@@ -1567,7 +2893,7 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseUp(const juce::MouseEvent&)
     if (activeKey >= 0) owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, activeKey));
     activeKey = -1;
     endWheelGesture();
-    repaint(132, 510, 656, 77);
+    repaint(132, 510 + modulationExtra, 656, 77);
 }
 
 void SynthAudioProcessorEditor::ClassicSurface::sectionMenu(const juce::String& title,
@@ -1627,7 +2953,7 @@ void SynthAudioProcessorEditor::ClassicSurface::openPresetBrowser()
     }));
     // Covers the instrument down to the keyboard, which stays playable while browsing.
     addAndMakeVisible(*browserPanel);
-    browserPanel->setBounds(0, 0, canvasWidth, 507);
+    browserPanel->setBounds(0, 0, canvasWidth, 507 + modulationExtra);
     browserPanel->toFront(true);
     browserPanel->grabKeyboardFocus();
 }
@@ -1735,9 +3061,7 @@ void SynthAudioProcessorEditor::ClassicSurface::saveFile(bool bank)
 void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
 {
     if (owner.getSelectedPart() != selectedPart) setPart(owner.getSelectedPart());
-    const auto bindingState = (owner.getEffectiveParameterValue("global.sync") >= 0.5f ? 1 : 0)
-        | (owner.getEffectiveParameterValue("lfo.free") >= 0.5f ? 2 : 0)
-        | (owner.getEffectiveParameterValue("lfo.2.free") >= 0.5f ? 4 : 0);
+    const auto bindingState = bindingStateNow();
     if (controlBindingState != bindingState || lastProgramIndex != owner.getCurrentProgram())
     {
         buildControls();
@@ -1747,6 +3071,8 @@ void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
     {
         control->updateValue();
     }
+    for (auto& display : displays)
+        display->refresh();
     {
         std::uint64_t now[2] {};
         for (int note = 36; note < 128; ++note)
@@ -1755,7 +3081,7 @@ void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
         {
             shownHeld[0] = now[0];
             shownHeld[1] = now[1];
-            repaint(132, 510, 656, 77);
+            repaint(132, 510 + modulationExtra, 656, 77);
         }
     }
     const auto diagnostics = owner.getDiagnosticsSnapshot();
@@ -1864,7 +3190,7 @@ SynthAudioProcessorEditor::SynthAudioProcessorEditor(SynthAudioProcessor& audioP
     setResizable(true, true);
     setResizeLimits(canvasWidth, canvasHeight, canvasWidth * 2, canvasHeight * 2);
     getConstrainer()->setFixedAspectRatio(static_cast<double>(canvasWidth) / canvasHeight);
-    setSize(canvasWidth, canvasHeight);
+    setSize(juce::roundToInt(canvasWidth * 1.2f), juce::roundToInt(canvasHeight * 1.2f)); // opens 20% larger than the logical canvas
     surface->configureSnapshot();
 }
 SynthAudioProcessorEditor::~SynthAudioProcessorEditor() = default;
