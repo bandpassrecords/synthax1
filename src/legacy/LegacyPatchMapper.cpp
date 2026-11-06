@@ -594,7 +594,7 @@ void mapEffects(Builder& b, bool synced)
     b.set("fx.chorus_mix", b.raw(F::ChorusDry_Wet));
     b.set("fx.chorus_delay_ms", 1.0f + 39.0f * b.raw(F::ChorusDelay));
     b.set("fx.chorus_depth_ms", std::max(0.1f, 24.0f * b.raw(F::ChorusDepth)));
-    b.set("fx.chorus_feedback", b.raw(F::ChorusFeedback) * 0.95f);
+    b.set("fx.chorus_feedback", 0.96f * std::pow(b.raw(F::ChorusFeedback), 1.8f)); // MEASURED (sweeps/fbtail): decay slopes at 0.75, 0.9 and 1.0
     b.set("fx.chorus_width", b.raw(F::ChorusWidth));
     b.flag("fx.chorus_dual_mode", b.on(F::ChorusMode));
     b.setHz("fx.chorus_rate_hz", curves::chorusHz(b.raw(F::ChorusRate)), 0.02f, 8.0f, "Chorus rate");
@@ -652,12 +652,33 @@ void mapEffects(Builder& b, bool synced)
     // T + makeup + (in - T)/ratio, below it the signal gains makeup(k). Synthax1 detects peaks (+3 dB
     // for a sine) before a master gain that is 12.54 dB hotter than the output, so its threshold is
     // T + 3 + 12.54.
-    constexpr std::array<float, 11> makeupDb { 0.0f, 0.2f, 0.9f, 1.9f, 3.1f, 4.4f, 5.8f, 7.2f, 8.6f, 9.9f, 11.2f };
+    // MEASURED (sweeps/compmakeup): the makeup gain also depends on the Ratio knob. Rows are Ratio 0, 0.1 ... 1.0,
+    // columns Threshold 0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0 (dB, quiet sine against compressor off).
+    constexpr std::array<float, 7> knobs { 0.0f, 0.1f, 0.3f, 0.5f, 0.7f, 0.9f, 1.0f };
+    constexpr std::array<std::array<float, 7>, 11> makeupDb { {
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f, 0.1f, 0.1f, 0.2f, 0.2f },
+        { 0.0f, 0.0f, 0.1f, 0.2f, 0.4f, 0.7f, 0.9f },
+        { 0.0f, 0.0f, 0.2f, 0.5f, 1.0f, 1.5f, 1.9f },
+        { 0.0f, 0.0f, 0.3f, 0.9f, 1.6f, 2.6f, 3.1f },
+        { 0.0f, 0.1f, 0.5f, 1.3f, 2.4f, 3.7f, 4.4f },
+        { 0.0f, 0.1f, 0.7f, 1.9f, 3.3f, 5.0f, 5.8f },
+        { 0.0f, 0.1f, 1.0f, 2.4f, 4.3f, 6.2f, 7.2f },
+        { 0.0f, 0.1f, 1.2f, 3.1f, 5.2f, 7.5f, 8.6f },
+        { 0.0f, 0.2f, 1.5f, 3.7f, 6.2f, 8.8f, 9.9f },
+        { 0.0f, 0.2f, 1.9f, 4.4f, 7.2f, 9.9f, 11.2f },
+    } };
     const auto knob = b.raw(F::CompThreshold);
-    const auto position = knob * 10.0f;
-    const auto index = std::min<std::size_t>(9, static_cast<std::size_t>(position));
+    const auto ratioPosition = b.raw(F::CompRatio) * 10.0f;
+    const auto row = std::min<std::size_t>(9, static_cast<std::size_t>(ratioPosition));
+    const auto rowFraction = ratioPosition - static_cast<float>(row);
+    std::size_t column = 1;
+    while (column < knobs.size() - 1 && knobs[column] < knob)
+        ++column;
+    const auto columnFraction = std::clamp((knob - knobs[column - 1]) / (knobs[column] - knobs[column - 1]), 0.0f, 1.0f);
+    const auto at = [&](std::size_t r) { return makeupDb[r][column - 1] + (makeupDb[r][column] - makeupDb[r][column - 1]) * columnFraction; };
     b.set("fx.compressor_threshold_db", -5.0f - 28.0f * knob + 3.0f + 12.54f);
-    b.set("fx.compressor_makeup_db", makeupDb[index] + (makeupDb[index + 1] - makeupDb[index]) * (position - static_cast<float>(index)));
+    b.set("fx.compressor_makeup_db", at(row) + (at(row + 1) - at(row)) * rowFraction);
     b.audible = audible;
 }
 // ------------------------------------------------------------------ modulation

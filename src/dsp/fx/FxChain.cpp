@@ -218,7 +218,7 @@ float fxTailLengthSeconds(const SynthParameters& parameters) noexcept
         const auto time = (std::clamp(finiteOrZero(fx.chorusDelayMs), 1.0f, 50.0f)
                            + std::clamp(finiteOrZero(fx.chorusDepthMs), 0.0f, 24.0f))
             * 0.001f;
-        const auto feedback = std::clamp(std::abs(finiteOrZero(fx.chorusFeedback)), 0.0f, 0.95f);
+        const auto feedback = std::clamp(std::abs(finiteOrZero(fx.chorusFeedback)), 0.0f, 0.975f);
         chorusTail = time * (feedback > 0.0f ? std::max(1.0f, std::ceil(std::log(delayTailFloor) / std::log(feedback))) : 1.0f);
     }
     // Serial effects can excite each other's tails; bounds therefore add.
@@ -358,7 +358,7 @@ void FxChain::reset() noexcept
         shelf.reset();
     eqSettings = { -1.0f, -1.0f, -100.0f, -100.0f };
     previousDistortionInput = previousPhaserInput = previousChorusInput = decimated = {};
-    decimationCounter = 0;
+    decimationClock = 0.0f;
     phaserStages = {};
     phaserFeedback = {};
     delayLowState = delayHighState = {};
@@ -438,7 +438,7 @@ FxStereoFrame FxChain::processSaturation(FxStereoFrame input, const SynthParamet
                 const auto bits = std::clamp(16 - static_cast<int>(drive * 14.0f), 2, 16);
                 const auto levels = static_cast<float>(1 << bits);
                 const auto value = std::clamp(sample, -1.0f, 1.0f) * levels;
-                return static_cast<float>(static_cast<int>(value + (value < 0.0f ? -0.5f : 0.5f))) / levels;
+                return 0.7f * static_cast<float>(static_cast<int>(value + (value < 0.0f ? -0.5f : 0.5f))) / levels;
             }
         }
         return sample;
@@ -453,12 +453,21 @@ FxStereoFrame FxChain::processSaturation(FxStereoFrame input, const SynthParamet
         };
         if (parameters.fx.distortionMode == DistortionMode::Decimate)
         {
-            if (decimationCounter-- <= 0)
+            // MEASURED (sweeps/crush): the hold lasts 2^(12 * Amount - 1) periods of 44.1 kHz (1/4 -> 11025 Hz,
+            // 1/2 -> 1378 Hz, 3/4 -> 172 Hz, 1 -> 21.5 Hz); below 1/12 nothing is held. Time-based, so the
+            // aliasing does not depend on the host sample rate.
+            const auto holdPeriods = std::exp2(12.0f * clampUnit(drive) - 1.0f);
+            const auto holdPhases = holdPeriods * 4.0f * static_cast<float>(sampleRate) / 44100.0f;
+            decimationClock = std::min(decimationClock, holdPhases);
+            if (holdPeriods <= 1.0f)
+                decimated = subframe;
+            else if ((decimationClock -= 1.0f) <= 0.0f)
             {
                 decimated = subframe;
-                decimationCounter = static_cast<int>(drive * drive * 252.0f);
+                decimationClock += holdPhases;
             }
-            subframe = decimated;
+            // MEASURED: both lo-fi types come out 3.1 dB below the input level at their lightest setting.
+            subframe = { decimated.left * 0.7f, decimated.right * 0.7f };
         }
         else
             subframe = { distort(subframe.left), distort(subframe.right) };
@@ -756,7 +765,7 @@ FxStereoFrame FxChain::processChorus(FxStereoFrame input, const FxParameters& pa
     smooth(delay, smoothedChorusDelay);
     const auto rate = std::clamp(finiteOrZero(parameters.chorusRateHz), 0.02f, 60.0f);
     const auto depth = std::clamp(finiteOrZero(parameters.chorusDepthMs), 0.0f, 24.0f);
-    const auto feedback = std::clamp(finiteOrZero(parameters.chorusFeedback), -0.95f, 0.95f);
+    const auto feedback = std::clamp(finiteOrZero(parameters.chorusFeedback), -0.975f, 0.975f);
     FxStereoFrame wet;
     for (int subsample = 0; subsample < 2; ++subsample)
     {

@@ -242,14 +242,14 @@ python scripts/parity_effects.py research/parity/renders/corpus-fx-legacy resear
 | Effect | Presets | Response difference | Level change | Tail 1 s after release |
 | --- | --- | --- | --- | --- |
 | Distortion | 38 | 6.0 dB | +0.3 / -1.0 dB | |
-| Compressor | 48 | 5.4 dB | -0.4 / +1.8 dB | |
+| Compressor | 48 | 5.4 → 4.3 dB | -0.4 / +1.8 → -0.3 dB | |
 | Delay | 66 | 4.9 → 3.8 dB | +0.7 / +1.1 dB | -15.5 / -7.4 → -12.3 dB |
 | Phaser | 16 | 4.5 dB | -1.0 / -0.4 dB | -71 / -93 dB |
-| Chorus | 19 | 3.8 dB | -1.0 / +0.4 dB | -42 / -58 dB |
+| Chorus | 19 | 3.8 → 3.4 dB | -1.0 / +0.4 dB | -42 / -58 dB |
 | Reverb | 50 | 3.0 dB | -1.3 / -1.5 dB | -20.3 / -19.5 dB |
 | EQ | 59 | 2.9 dB | +1.0 / +2.0 dB | |
 
-Next targets from it: the delay's echoes still last about 3 dB longer than the reference synth's on real presets (the sweep matches, so look at the low/high cut, smear and ping-pong paths; fixed in the sweep, see Delay below); the phaser and chorus tails die much sooner (the reference synth's feedback rings on); the compressor adds about 2 dB more makeup; and Decimate and Bitcrush are still unmeasured.
+Next targets from it: the delay's echoes still last about 3 dB longer than the reference synth's on real presets (the sweep matches; look at the low/high cut, smear and ping-pong); the phaser (below); Fold and Bitcrush distortion; and the remaining spectral differences, which are largest for distortion (6.0 dB).
 
 ## Cross-check against the manual
 
@@ -275,7 +275,7 @@ The manual cannot supply the numbers; those have to be measured.
 1. **Detuned unison saws** (spectral distance 15-21 dB): the sine tests match, saws do not; probably voice phases and the saw's band-limiting.
 2. **Filter modes:** bandpass is 3-4 dB too strong at its centre, highpass leaks more bass, resonance runs about 1.7 dB hot, and the drive limiter is ~2 dB high at the maximum.
 3. **Trisaw** waveform (-2.9 dB) and the pitch-modulation envelope shape ("MOD pitch env").
-4. **Phaser and compressor dynamics:** attack/release times and the phaser LFO law are unmeasured (the static curves match).
+4. **Phaser and compressor dynamics:** attack/release times and the phaser LFO law are unmeasured; the compressor's static curve and makeup match, the phaser's static response does not.
 5. **Other modulation depths** (pitch, pan, resonance, LFO gain destinations): only part volume and filter cutoff are calibrated.
 6. **Reverb, distortion types** have not been measured in detail; **Sync-off** arp times and **portamento** likewise.
 
@@ -328,6 +328,14 @@ Fine sweeps of oscillator octave and arpeggiator step transpose (`octbins`, `arp
 - **Dry/Wet** is the same law as the reverb: dry follows a quarter cosine (-3 dB at 0.5), the wet gain is the reverb's table (about mix^1.9). It was a linear crossfade. After the change dry and first echo are within 0.5 dB at nine settings.
 - 66 real presets: response difference 4.9 to 3.8 dB; the tail one second after release went from -7.4 to -12.3 dB (reference synth -15.5 dB).
 - Not measured here: low/high cut, smear, spread, ping-pong and the synced divisions beyond what the mapper already checks.
+
+## Compressor makeup, chorus feedback, Decimate (measured)
+
+- **Compressor makeup** depends on Ratio as well as Threshold (`compmakeup`: a quiet sine against compressor off, 11 ratios by 6 thresholds). It is 11.2 dB only at ratio 100:1 and threshold 10; at ratio 1.98:1 and threshold 5 it is 1.3 dB. The mapper holds the measured 11 x 7 table (bilinear). On noise and saw (`compdyn`) the output RMS now matches within about 1 dB (it was up to 5.5 dB high at lower ratios); real presets: 5.4 to 4.3 dB, level change +1.8 to -0.3 dB (reference synth -0.4 dB).
+- **Chorus feedback** rings longer at the top of the knob: the mapper uses `0.96 * knob^1.8` (it was `0.95 * knob`) and the `fx.chorus_feedback` range ends at +-0.975. Decay times after a noise burst (`fbtail`) at knob 0.75 / 0.9 / 1.0 now fall within the 50 ms resolution of the measurement for 0.75 and 0.9 and within 11 dB at 1.0 (half a second after the burst); real presets 3.8 to 3.4 dB.
+- **Decimate** holds each sample for `2^(12 * Amount - 1)` periods of 44.1 kHz, independent of the host rate (hold rate 11025, 1378, 172 and 21.5 Hz at Amount 0.25, 0.5, 0.75 and 1; nothing below 1/12). Aliases match at eleven amounts within 1 dB. Both Decimate and Bitcrush come out 3.1 dB below the input level (gain 0.7).
+- **Phaser feedback tail:** the reference phaser rings only about -70 dB below the burst at full feedback, so the tail difference in the table (-71 against -93 dB) is not audible. The static response (`phstatic`) is not matched: the reference synth shows one broad notch of about 18 dB where Synthax1 shows several deeper ones, and the notch moves between programs that should be identical, so the sweep needs a better design (a way to freeze or lock the phaser LFO) before the stage count and spacing can be fitted.
+- **Bitcrush is not matched.** The reference output is a staircase whose step grows with Amount and is fixed in absolute level (a sine below the step comes out silent, at Amount 1 everything is silent), with non-monotonic windows (`crush`); Synthax1 quantises to a bit depth instead.
 
 ## Controls
 

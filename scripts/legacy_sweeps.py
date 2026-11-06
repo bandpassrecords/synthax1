@@ -608,7 +608,80 @@ def delay_set() -> list[Program]:
     return out
 
 
-SETS = {"delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+def fbtail_set() -> list[Program]:
+    # A 40 ms noise burst through the phaser, then the chorus, alone and fully wet: how long the feedback rings.
+    common = {"OscA1Wave": ref.wave("noise"), "AmpEnvAAttack": ref.envelope(0.0), "AmpEnvARelease": ref.envelope(0.0)}
+    out = []
+    for v in (0.0, 0.25, 0.5, 0.75, 0.9, 1.0):
+        out.append(Program(f"phf fb {v:.2f}", "phaser", "", ["tail"], {**common, "XSwPhaserOnOff": 1.0, "PhaserDry_Wet": 1.0,
+                   "PhaserFeedback": v}, [Note(57, 0.25, 0.04, 100)], 12, {"kind": "phaser", "value": v}))
+    for v in (0.0, 0.25, 0.5, 0.75, 0.9, 1.0):
+        out.append(Program(f"chf fb {v:.2f}", "chorus", "", ["tail"], {**common, "XSwChorusOnOff": 1.0, "ChorusDry_Wet": 1.0,
+                   "ChorusFeedback": v}, [Note(57, 0.25, 0.04, 100)], 12, {"kind": "chorus", "value": v}))
+    return out
+
+
+def phstatic_set() -> list[Program]:
+    # Sustained noise through a motionless phaser (LFO gain 0): notch positions against Center, Feedback and Spread.
+    base = {"OscA1Wave": ref.wave("noise"), "XSwPhaserOnOff": 1.0, "PhaserDry_Wet": 0.5, "PhaserLFOGain": 0.0,
+            "PhaserSpread": 0.5, "PhaserLROffset": 0.5, "PhaserWidth": 1.0, "PhaserFeedback": 0.5, "PhaserCenterFreq": 0.5}
+    out = []
+
+    def add(kind, value, **changes):
+        out.append(Program(f"phs {kind} {value:.2f} {len(out)}", "phaser", "", ["curve"], {**base, **changes},
+                           [Note(57, 0.25, 3.5, 100)], 8, {"kind": kind, "value": value}))
+    for center in (0.3, 0.5, 0.7):
+        for v in (0.0, 0.25, 0.5, 0.75, 1.0):
+            add("fb", v, PhaserCenterFreq=center, PhaserFeedback=v)
+    for v in (0.0, 0.5, 1.0):
+        add("spread", v, PhaserSpread=v)
+    return out
+
+
+def compdyn_set() -> list[Program]:
+    # Compressor on signals with a different crest factor than a sine (noise, saw): output level against the
+    # same settings in the other synth shows whether the detector follows the peak or the RMS.
+    out = []
+    for wave in ("noise", "saw"):
+        for ratio in (0.5, 1.0):
+            for thr in (0.2, 0.5, 0.8):
+                for volume in (0.2, 0.6):
+                    values = {"OscA1Wave": ref.wave(wave), "OscA1Volume": volume, "MixA": 1.0, "MainVolume": 0.5,
+                              "CompAttack": 0.05, "CompRelease": 0.3, "XSwCompOnOff": 1.0, "CompThreshold": thr, "CompRatio": ratio}
+                    out.append(Program(f"cmd {wave} r{ratio:.1f} t{thr:.1f} v{volume:.1f}", "comp", "", ["rms_db"], values,
+                                       [Note(57, 0.25, 3.5)], 6, {}))
+    return out
+
+
+def compmakeup_set() -> list[Program]:
+    # A quiet sine (well below every threshold) through the compressor: the output change against compressor
+    # off is the makeup gain, swept over Ratio and Threshold.
+    base = {"OscA1Wave": ref.wave("sine"), "OscA1Volume": 0.04, "MixA": 1.0, "MainVolume": 0.5, "CompAttack": 0.05, "CompRelease": 0.3}
+    out = [Program("cmu off", "comp", "", ["rms_db"], base, [Note(57, 0.25, 2.0)], 5, {})]
+    for ratio in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
+        for thr in (0.1, 0.3, 0.5, 0.7, 0.9, 1.0):
+            out.append(Program(f"cmu r{ratio:.1f} t{thr:.1f}", "comp", "", ["rms_db"],
+                               {**base, "XSwCompOnOff": 1.0, "CompThreshold": thr, "CompRatio": ratio}, [Note(57, 0.25, 2.0)], 5, {}))
+    return out
+
+
+def crush_set() -> list[Program]:
+    # Bitcrush: a sine at eight levels through amounts 0.3 ... 1.0 (the amplitude below which the output goes silent
+    # shows the quantiser step); Decimate: a sine through amounts 0 ... 1 (the hold rate shows in the aliases).
+    out = []
+    for amount in (0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0):
+        for volume in (0.02, 0.04, 0.08, 0.15, 0.3, 0.5, 0.75, 1.0):
+            values = {"OscA1Wave": ref.wave("sine"), "OscA1Volume": volume, "XSwDistOnOff": 1.0, "DistortType": 1.0,
+                      "DistortAmount": amount, "DistortDryWet": 1.0}
+            out.append(Program(f"crush a{amount:.2f} v{volume:.2f}", "crush", "", ["harmonics"], values, [Note(57, 0.25, 1.5, 100)], 4, {}))
+    for i in range(0, 21):
+        values = {"OscA1Wave": ref.wave("sine"), "OscA1Volume": 0.3, "XSwDistOnOff": 1.0, "DistortType": 0.75,
+                  "DistortAmount": i / 20, "DistortDryWet": 1.0}
+        out.append(Program(f"deci a{i / 20:.2f}", "crush", "", ["harmonics"], values, [Note(57, 0.25, 1.5, 100)], 4, {}))
+    return out
+
+
+SETS = {"crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

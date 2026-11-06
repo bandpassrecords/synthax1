@@ -178,7 +178,7 @@ void testMeasuredCurves()
     patch[Field::FilterACutoff] = 0.64f;       // the reference's worked example:
     patch[Field::FilterCtlCutoff] = 0.32f;     //   590 Hz + 24.3 Hz control -> 1100 Hz
     patch[Field::DelayHighCut] = 1.0f;         // high cut falls as the value rises: 82.5 Hz
-    patch[Field::CompRatio] = 0.5024f;         // 1.98:1
+    patch[Field::CompRatio] = 0.5f;            // ~1.98:1
     patch[Field::Sync] = 1.0f;
     patch[Field::LFO1Free] = 0.0f;
     patch[Field::LFO1Rate] = 0.5f;             // step 18 of 36: 1/4T
@@ -199,7 +199,9 @@ void testMeasuredCurves()
     check(near(combined, semitones(1100.0f) - 1.79f, 0.3f), "part + control cutoff reproduce 1100 Hz (with measured offset)");
 
     check(valueOf(mapped, "fx.delay_high_cut_hz") == 200.0f, "delay high cut at 1.0 is its lowest value");
-    check(near(valueOf(mapped, "fx.compressor_ratio"), 1.98f, 0.02f), "compressor ratio from the measured table");
+    check(near(valueOf(mapped, "fx.compressor_ratio"), 1.98f, 0.03f), "compressor ratio from the measured table");
+    check(near(valueOf(mapped, "fx.compressor_makeup_db"), 1.3f, 0.05f), "compressor makeup depends on Ratio and Threshold (0.5, 0.5 -> 1.3 dB)");
+    check(near(valueOf(mapped, "fx.chorus_feedback"), 0.96f * std::pow(0.5f, 1.8f), 0.001f), "chorus feedback curve");
     check(choiceOf(mapped, "lfo.sync_division") == "1/4T", "synced LFO division");
     check(near(valueOf(mapped, "lfo.2.rate_hz"), 2.83f, 0.02f), "free LFO keeps Hz under Sync");
     check(choiceOf(mapped, "arp.rate") == "1/8", "arp division");

@@ -103,7 +103,7 @@ private:
     FxStereoFrame phaserFeedback;
     FxStereoFrame previousDistortionInput;
     FxStereoFrame decimated;
-    int decimationCounter = 0;
+    float decimationClock = 0.0f;
     // The drive gain of the current mode, recomputed only when the drive or the mode changes.
     float cachedDistortionDrive = -1.0f;
     DistortionMode cachedDistortionMode = DistortionMode::Overdrive;

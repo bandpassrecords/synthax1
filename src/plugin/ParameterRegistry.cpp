@@ -401,7 +401,7 @@ std::vector<ParameterSpec> buildSpecs()
     specs.push_back(floatParam("fx.phaser_lr_offset", "Phaser Lr Offset", "fx", "normalized", 0.0f, 1.0f, 0.25f));
     specs.push_back(floatParam("fx.phaser_width", "Phaser Width", "fx", "normalized", 0.0f, 1.0f, 1.0f));
     specs.push_back(floatParam("fx.chorus_delay_ms", "Chorus Delay Ms", "fx", "milliseconds", 1.0f, 50.0f, 11.0f));
-    specs.push_back(floatParam("fx.chorus_feedback", "Chorus Feedback", "fx", "normalized", -0.95f, 0.95f, 0.0f));
+    specs.push_back(floatParam("fx.chorus_feedback", "Chorus Feedback", "fx", "normalized", -0.975f, 0.975f, 0.0f));
     specs.push_back(floatParam("fx.chorus_width", "Chorus Width", "fx", "normalized", 0.0f, 1.0f, 1.0f));
     specs.push_back(floatParam("fx.eq_low_frequency_hz", "Eq Low Frequency Hz", "fx", "Hz", 20.0f, 2000.0f, 160.0f));
     specs.push_back(floatParam("fx.eq_high_frequency_hz", "Eq High Frequency Hz", "fx", "Hz", 1000.0f, 20000.0f, 6000.0f));
