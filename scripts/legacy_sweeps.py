@@ -633,6 +633,36 @@ def sustain_set() -> list[Program]:
     return out
 
 
+def unilevel_set() -> list[Program]:
+    # Level and left/right balance of a unison saw: voices 1/2/4/8, stereo 0/0.5/1, detune 0/0.3/1.
+    # Three notes per program (voice phases may be random per note), measured as the mean power.
+    out = []
+    notes = [Note(45, 0.25 + 3.0 * i, 2.5, 100) for i in range(3)]
+    for voices in (1, 2, 4, 8):
+        for stereo in (0.0, 0.5, 1.0):
+            for detune in (0.0, 0.3, 1.0):
+                if voices == 1 and (stereo > 0.0 or detune > 0.0):
+                    continue
+                out.append(Program(f"uni v{voices} s{stereo:.1f} d{detune:.1f}", "uni", "", ["rms_db"],
+                                   {"OscA1Wave": ref.wave("saw"), "OscA1Voices": voices / 8, "OscA1Detune": detune,
+                                    "OscA1Stereo": stereo}, notes, 9, {}))
+    return out
+
+
+def uniphase2_set() -> list[Program]:
+    # 8 saw voices at the same pitch (detune 0 or tiny), Retrig on/off, many short notes: the distribution of the
+    # summed power over notes shows how the voices' start phases are drawn when nothing detunes them apart.
+    out = []
+    notes = [Note(45, 0.25 + 1.5 * i, 1.0, 100) for i in range(24)]
+    for retrig in (0.0, 1.0):
+        for voices in (2, 8):
+            for detune in (0.0, 0.05):
+                out.append(Program(f"ph r{int(retrig)} v{voices} d{detune:.2f}", "ph", "", ["rms_db"],
+                                   {"OscA1Wave": ref.wave("saw"), "OscA1Voices": voices / 8, "OscA1Detune": detune,
+                                    "OscA1Retrig": retrig, "OscA1Octave": 0.5, "AmpEnvARelease": ref.envelope(0.0)}, notes, 37, {}))
+    return out
+
+
 def filtermodes_set() -> list[Program]:
     # Noise through every filter mode, slope, resonance and drive at two cutoffs; compared as spectra
     # (parity_compare.py groups by the second field, here the mode).
@@ -846,7 +876,7 @@ def stepwho_set() -> list[Program]:
     return out
 
 
-SETS = {"sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"uniphase2": uniphase2_set, "unilevel": unilevel_set, "sustain": sustain_set, "envshape": envshape_set, "cutenv": cutenv_set, "resoctl": resoctl_set, "resomodes": resomodes_set, "resosweep": resosweep_set, "stepwho": stepwho_set, "mixneg": mixneg_set, "stepvel": stepvel_set, "crush": crush_set, "compmakeup": compmakeup_set, "compdyn": compdyn_set, "phstatic": phstatic_set, "fbtail": fbtail_set, "delay": delay_set, "volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:
