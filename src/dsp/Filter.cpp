@@ -124,6 +124,13 @@ float tableAt(const std::array<float, 11>& table, float amount) noexcept
 
 float driveGainFor(float amount) noexcept { return std::pow(10.0f, tableAt(driveGainDb, amount) * 0.05f); }
 
+// MEASURED (the reference synth 3.0.7.3, sweeps/hpdrive, 66 programs): on the highpass modes drive is a plain gain, the same at
+// every input level and cutoff (no knee), that rises 3.4 dB by 0.1, peaks at 3.8 dB near 0.2 and then falls to -2.6 dB at 1.0.
+// The lowpass and bandpass gain table above is 13 dB higher at the top and saturates.
+constexpr std::array<float, 11> highpassDriveGainDb { 0.0f, 3.4f, 3.7f, 3.0f, 2.0f, 1.1f, 0.3f, -0.5f, -1.3f, -2.0f, -2.6f };
+float highpassDriveGainFor(float amount) noexcept { return std::pow(10.0f, tableAt(highpassDriveGainDb, amount) * 0.05f); }
+bool isHighpassMode(FilterMode mode) noexcept { return mode == FilterMode::H2 || mode == FilterMode::H4; }
+
 // MEASURED (the reference synth 3.0.7.3, sweeps/drive2, sine waveforms): the drive stage is not a saturator. The output
 // follows the input up to a knee and then falls again (a sine at full drive and level comes out with a dip
 // at its crest), the knee moving to lower levels as drive rises. Modelled as x / (1 + (x/K)^4); K in the
@@ -223,11 +230,14 @@ float Filter::process(float input, float midiNote, const SynthParameters& parame
         cachedCoefficientMode = static_cast<int>(filter.mode);
     }
 
+    const auto driveHighpass = isHighpassMode(filter.mode);
     if (std::abs(cachedDriveAmount - driveAmount) > 0.000001f
-        || std::abs(cachedResonance - resonance) > 0.000001f)
+        || std::abs(cachedResonance - resonance) > 0.000001f
+        || cachedDriveHighpass != driveHighpass)
     {
-        cachedDriveGain = driveGainFor(driveAmount);
-        cachedDriveLimit = driveLimitFor(driveAmount);
+        cachedDriveHighpass = driveHighpass;
+        cachedDriveGain = driveHighpass ? highpassDriveGainFor(driveAmount) : driveGainFor(driveAmount);
+        cachedDriveLimit = driveHighpass ? 1.0e4f : driveLimitFor(driveAmount);
         cachedInverseDriveLimit = 1.0f / cachedDriveLimit;
         cachedFeedback = resonance * (3.85f / (1.0f + driveAmount * 1.35f));
         cachedDriveAmount = driveAmount;
@@ -282,12 +292,15 @@ void Filter::prepareBlock(const FilterParameters& filter) noexcept
 
     const auto driveAmount = clampKnownFinite(filter.drive, 0.0f, 1.0f);
     const auto resonance = clampKnownFinite(filter.resonance, 0.0f, 1.0f);
+    const auto driveHighpass = isHighpassMode(filter.mode);
     if (std::abs(cachedDriveAmount - driveAmount) > 0.000001f
         || std::abs(cachedResonance - resonance) > 0.000001f
-        || cachedSelfOscillation != filter.selfOscillation)
+        || cachedSelfOscillation != filter.selfOscillation
+        || cachedDriveHighpass != driveHighpass)
     {
-        cachedDriveGain = driveGainFor(driveAmount);
-        cachedDriveLimit = driveLimitFor(driveAmount);
+        cachedDriveHighpass = driveHighpass;
+        cachedDriveGain = driveHighpass ? highpassDriveGainFor(driveAmount) : driveGainFor(driveAmount);
+        cachedDriveLimit = driveHighpass ? 1.0e4f : driveLimitFor(driveAmount);
         cachedInverseDriveLimit = 1.0f / cachedDriveLimit;
         cachedFeedback = resonance * ((filter.selfOscillation ? 4.35f : 3.85f) / (1.0f + driveAmount * 1.35f));
         cachedDriveAmount = driveAmount;

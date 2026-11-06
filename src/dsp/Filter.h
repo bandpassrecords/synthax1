@@ -72,6 +72,7 @@ private:
     float cachedCoefficient = 0.0f;
     float cachedDriveAmount = -1.0f;
     float cachedResonance = -1.0f;
+    bool cachedDriveHighpass = false;
     float cachedDriveGain = 1.0f;
     float cachedDriveLimit = 1.0e4f;
     float cachedInverseDriveLimit = 1.0e-4f;
