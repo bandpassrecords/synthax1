@@ -324,7 +324,7 @@ void SynthEngine::setParameters(const SynthParameters& newParameters) noexcept
                 switch (index % 5)
                 {
                     case 0: limit = 120.0f; break; // oscillator pitch: the reference synth reaches 120 semitones
-                    case 1: limit = 24.0f; break;
+                    case 1: limit = 2.0f; break; // oscillator volume: linear gain added to the level
                     case 4: limit = 180.0f; break;
                     default: break;
                 }

@@ -129,7 +129,9 @@ std::vector<ModulationDestinationInfo> buildDestinationCatalog()
             const auto prefix = "layer." + std::to_string(layer) + ".osc." + std::to_string(osc) + ".";
             const auto name = std::string(1, static_cast<char>('A' + layer - 1)) + std::to_string(osc);
             append(prefix + "note", name + " Pitch", 120.0f, "semitones"); // The reference synth: 120 semitones at +10
-            append(prefix + "level", name + " Volume", 24.0f, "dB");
+            // MEASURED (the reference synth 3.0.7.3, sweeps/volroute): Volume A/B adds to each oscillator's volume
+            // knob, linear in gain, +1.0 at +10; a silent oscillator (volume 0) is brought in by its route.
+            append(prefix + "level", name + " Volume", 2.0f, "gain");
             append(prefix + "pan", name + " Pan", 1.0f, "normalized");
             append(prefix + "detune", name + " Detune", 1.0f, "normalized");
             append(prefix + "phase_degrees", name + " Phase", 180.0f, "degrees");

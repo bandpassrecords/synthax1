@@ -111,6 +111,42 @@ def lfodepth_set() -> list[Program]:
     return out
 
 
+def volroute_set() -> list[Program]:
+    # Where does a route to Volume A act, and what is Step Velocity without the arpeggiator? A sine on
+    # A1 (A2 too where noted), velocity 127 into Volume A through Misc 1 A, with the oscillator volume,
+    # the route amount and Mix A swept; then Step Velocity into Mix AB with the arpeggiator off and on.
+    sine = ref.wave("sine")
+    velocity_route = {"XModMisc1ASource": 1 / 11, "YModMisc1ADest1": 1 / 32}
+    out = []
+    for volume in (0.0, 0.25, 0.5, 1.0):
+        for amount in (0.5, 0.625, 0.75, 1.0):
+            out.append(Program(f"volA vol {volume:.2f} amt {amount:.3f}", "mod", "", ["rms_db"],
+                               {"OscA1Wave": sine, "OscA1Volume": volume, **velocity_route, "XModMisc1ADest1Am": amount},
+                               [Note(57, 0.25, 3.5, 127)], 4, {"case": "volA", "volume": volume, "amount": amount, "mix": 0.5}))
+    for mix in (0.0, 0.25, 1.0):
+        for volume in (0.0, 0.5):
+            out.append(Program(f"volA vol {volume:.2f} mix {mix:.2f}", "mod", "", ["rms_db"],
+                               {"OscA1Wave": sine, "OscA1Volume": volume, "MixA": mix, **velocity_route, "XModMisc1ADest1Am": 1.0},
+                               [Note(57, 0.25, 3.5, 127)], 4, {"case": "volA", "volume": volume, "amount": 1.0, "mix": mix}))
+    for volume in (0.0, 0.5):
+        out.append(Program(f"volA two osc vol {volume:.2f}", "mod", "", ["rms_db"],
+                           {"OscA1Wave": sine, "OscA1Volume": volume, "OscA2Wave": sine, "OscA2Voices": 1 / 8,
+                            "OscA2Volume": volume, **velocity_route, "XModMisc1ADest1Am": 1.0},
+                           [Note(57, 0.25, 3.5, 127)], 4, {"case": "volA2", "volume": volume, "amount": 1.0, "mix": 0.5}))
+    for velocity in (64, 127):
+        out.append(Program(f"volA vol 0 vel {velocity}", "mod", "", ["rms_db"],
+                           {"OscA1Wave": sine, "OscA1Volume": 0.0, **velocity_route, "XModMisc1ADest1Am": 1.0},
+                           [Note(57, 0.25, 3.5, velocity)], 4, {"case": "volAvel", "volume": 0.0, "amount": 1.0, "velocity": velocity}))
+    step_route = {"XModMisc1ASource": 11 / 11, "YModMisc1ADest1": 22 / 32}
+    for arp in (0.0, 1.0):
+        for amount in (0.0, 0.25, 0.5, 0.75, 1.0):
+            out.append(Program(f"step mixAB arp {int(arp)} amt {amount:.2f}", "mod", "", ["rms_db"],
+                               {"OscA1Wave": sine, "MixA": 0.5, "XSwArpOnOff": arp, "ArpGate": 1.0, **step_route,
+                                "XModMisc1ADest1Am": amount}, [Note(57, 0.25, 3.5, 127)], 4,
+                               {"case": "step", "arp": arp, "amount": amount}))
+    return out
+
+
 def arpgate_set() -> list[Program]:
     # Arp Up at 1/8 (250 ms steps at 120 BPM, Sync on) on one held note; the sine's amp envelope is
     # fast enough that the audible length of each step is the gate.
@@ -551,7 +587,7 @@ def dist_set() -> list[Program]:
     return out
 
 
-SETS = {"dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
+SETS = {"volroute": volroute_set, "dist": dist_set, "hpresp": hpresp_set, "lfocut": lfocut_set, "drive2": drive2_set, "filtermodes": filtermodes_set, "reverbdamp": reverbdamp_set, "reverbfine": reverbfine_set, "reverb": reverb_set, "lfoshape": lfoshape_set, "arpmodes": arpmodes_set, "unisonphase": unisonphase_set, "startfree": startfree_set, "startwave": startwave_set, "startphase": startphase_set, "phasecancel": phasecancel_set, "wavespec": wavespec_set, "univoices": univoices_set, "octbins": octbins_set, "arpbins": arpbins_set, "arptrans": arptrans_set, "pitch": pitch_set, "keytrack": keytrack_set, "mixroute": mixroute_set, "wheel": wheel_set, "velocity": velocity_set, "unipan": unipan_set, "drive": drive_set, "cutmod": cutmod_set, "fxnoise": fxnoise_set, "comp": comp_set, "arpgate": arpgate_set, "lfodepth": lfodepth_set, "filter": filter_set, "lfo": lfo_set, "env": env_set, "level": level_set, "unison": unison_set}
 
 
 def main() -> None:

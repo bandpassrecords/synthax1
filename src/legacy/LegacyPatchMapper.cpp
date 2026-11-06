@@ -673,9 +673,11 @@ const std::vector<Destination>& destinationTable()
 {
     static const std::vector<Destination> table {
         {},                                                                                  // None
-        { { { "Part A Volume", "layer.1.level_db", 0.5f, 1.4f } } },   // Volume A
-        { { { "Part B Volume", "layer.2.level_db", 0.5f, 1.4f } } },   // Volume B
-        { { { "Part A Volume", "layer.1.level_db", 0.5f, 1.4f }, { nullptr, "layer.2.level_db", 0.5f } } },   // Volume AB
+        // MEASURED (sweeps/volroute): Volume A/B add to each oscillator's volume knob, +0.5 at +10 for a bipolar source (LFO), measured on the part level before; the route amount is a fraction of the catalogue range 2.0.
+        { { { "A1 Volume", "layer.1.osc.1.level", 0.5f, 2.0f }, { nullptr, "layer.1.osc.2.level", 0.5f } } },   // Volume A
+        { { { "B1 Volume", "layer.2.osc.1.level", 0.5f, 2.0f }, { nullptr, "layer.2.osc.2.level", 0.5f } } },   // Volume B
+        { { { "A1 Volume", "layer.1.osc.1.level", 0.5f, 2.0f }, { nullptr, "layer.1.osc.2.level", 0.5f },
+            { nullptr, "layer.2.osc.1.level", 0.5f }, { nullptr, "layer.2.osc.2.level", 0.5f } } },   // Volume AB
         { { { "A1 Pitch", "layer.1.osc.1.note", 120.0f }, { nullptr, "layer.1.osc.2.note", 120.0f } } },
         { { { "B1 Pitch", "layer.2.osc.1.note", 120.0f }, { nullptr, "layer.2.osc.2.note", 120.0f } } },
         { { { "A1 Pitch", "layer.1.osc.1.note", 120.0f }, { nullptr, "layer.1.osc.2.note", 120.0f },

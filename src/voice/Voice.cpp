@@ -665,13 +665,13 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
             const auto* panMod = lane(offset + 2);
             const auto* detuneMod = lane(offset + 3);
             const auto* phaseMod = lane(offset + 4);
+            // Volume modulation adds to the oscillator's linear level (renderNative clamps it to 0..4).
             const auto levelLive = plan.live[static_cast<std::size_t>(offset + 1)];
-            const auto steadyLevel = levelLive ? 0.0f : slot.level * decibelsToGain(clampFast(0.0f, -24.0f, 24.0f));
             for (int i = 0; i < count; ++i)
             {
                 const auto sample = static_cast<std::size_t>(i);
                 oscillatorPitch[sample] = pitchLane[sample] + clampFast(pitchMod[i], -120.0f, 120.0f);
-                oscillatorLevel[sample] = levelLive ? slot.level * decibelsToGain(clampFast(levelMod[i], -24.0f, 24.0f)) : steadyLevel;
+                oscillatorLevel[sample] = levelLive ? slot.level + clampFast(levelMod[i], -2.0f, 2.0f) : slot.level;
                 oscillatorPan[sample] = clampFast(slot.pan + panMod[i], -1.0f, 1.0f);
                 oscillatorDetune[sample] = clampUnitFast(slot.detune + detuneMod[i]);
             }
