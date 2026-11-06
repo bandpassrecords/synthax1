@@ -51,11 +51,12 @@ float releaseMs(float n) noexcept { return tableMs(releaseTable, n); }
 
 // MEASURED. A part filter on its own displays 1.0011 * e^(9.9673 x), 1 Hz .. ~21.3 kHz.
 // MEASURED. The Filter Control cutoff adds to a part's cutoff in the normalized domain:
-// f = 0.064749 * e^(10.152717 * (part + control)), limited to 22028.47 Hz.
+// f = 0.064749 * e^(10.152717 * (part + control)). The reference synth limits the frequency (22028 Hz) only after the
+// modulation has been added (MEASURED, sweeps/wheelcut: with both knobs at the top a cutoff route of -1 changes nothing,
+// because the sum has room to spare), so the mapper keeps the sum unlimited and the filter clamps after modulation.
 float combinedFilterHz(float part, float control) noexcept
 {
-    const auto hz = 0.064749088 * std::exp(10.152717 * (static_cast<double>(clamp01(part)) + clamp01(control)));
-    return static_cast<float>(std::min(hz, 22028.47));
+    return static_cast<float>(0.064749088 * std::exp(10.152717 * (static_cast<double>(clamp01(part)) + clamp01(control))));
 }
 
 float lfoHz(float n) noexcept { return 0.0417f * std::exp(8.4352f * clamp01(n)); }       // MEASURED, free-running
