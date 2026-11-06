@@ -56,16 +56,35 @@ float attackProgressFor(float level) noexcept
     return 1.0f;
 }
 
+// The fall curve as linear gain, 32 points between each measured point, so a decaying or
+// releasing envelope needs no pow per sample. Linear steps in gain over 1/32 of a measured
+// step stay within 0.003 dB of the dB-interpolated curve everywhere.
+constexpr int fallSubSteps = 32;
+constexpr std::size_t fallGainCount = (fallShapeDb.size() - 1) * fallSubSteps + 1;
+
+const std::array<float, fallGainCount> fallGain = [] {
+    std::array<float, fallGainCount> gains {};
+    for (std::size_t i = 0; i < fallGainCount; ++i)
+    {
+        const auto node = i / fallSubSteps;
+        const auto fraction = static_cast<float>(i % fallSubSteps) / static_cast<float>(fallSubSteps);
+        const auto db = node + 1 < fallShapeDb.size()
+            ? fallShapeDb[node] + (fallShapeDb[node + 1] - fallShapeDb[node]) * fraction
+            : fallShapeDb[node];
+        gains[i] = std::pow(10.0f, db * 0.05f);
+    }
+    return gains;
+}();
+
 // Remaining level (1 -> 0) at t/T along the decay/release curve; 0 past its end.
 float fallLevel(float progress) noexcept
 {
     if (progress >= fallEnd)
         return 0.0f;
-    const auto position = std::max(0.0f, progress) * 32.0f;
-    const auto index = static_cast<std::size_t>(position);
+    const auto position = std::max(0.0f, progress) * static_cast<float>(32 * fallSubSteps);
+    const auto index = std::min(static_cast<std::size_t>(position), fallGainCount - 2);
     const auto fraction = position - static_cast<float>(index);
-    const auto db = fallShapeDb[index] + (fallShapeDb[index + 1] - fallShapeDb[index]) * fraction;
-    return std::pow(10.0f, db * 0.05f);
+    return fallGain[index] + (fallGain[index + 1] - fallGain[index]) * fraction;
 }
 } // namespace
 

@@ -94,23 +94,36 @@ float distortionGain(float drive, float offsetDb, float slopeDb) noexcept
     return std::pow(10.0f, (offsetDb + slopeDb * clampUnit(drive)) * 0.05f);
 }
 
-float clipDistort(float sample, float drive) noexcept
+float distortionGainFor(DistortionMode mode, float drive) noexcept
 {
-    const auto ceiling = 0.16f * distortionUnits;
-    return std::clamp(sample * distortionGain(drive, -9.6f, 46.0f), -ceiling, ceiling);
+    switch (mode)
+    {
+        case DistortionMode::Soft: return distortionGain(drive, -10.3f, 49.0f);
+        case DistortionMode::Clip: return distortionGain(drive, -9.6f, 46.0f);
+        case DistortionMode::Fold: return distortionGain(drive, -31.0f, 58.0f);
+        case DistortionMode::Decimate:
+        case DistortionMode::Bitcrush: break;
+    }
+    return 1.0f;
 }
 
-float foldDistort(float sample, float drive) noexcept
+float clipDistort(float sample, float gain) noexcept
+{
+    const auto ceiling = 0.16f * distortionUnits;
+    return std::clamp(sample * gain, -ceiling, ceiling);
+}
+
+float foldDistort(float sample, float gain) noexcept
 {
     const auto ceiling = 0.13f * distortionUnits;
-    const auto scaled = std::clamp(sample * distortionGain(drive, -31.0f, 58.0f), -1.0e4f, 1.0e4f);
+    const auto scaled = std::clamp(sample * gain, -1.0e4f, 1.0e4f);
     return ceiling * std::sin(3.14159265f * scaled / ceiling);
 }
 
-float overdriveDistort(float sample, float drive) noexcept
+float overdriveDistort(float sample, float gain) noexcept
 {
     const auto ceiling = 0.155f * distortionUnits;
-    return ceiling * std::tanh(sample * distortionGain(drive, -10.3f, 49.0f) / ceiling);
+    return ceiling * std::tanh(sample * gain / ceiling);
 }
 
 float dbToGain(float db) noexcept
@@ -407,12 +420,19 @@ FxStereoFrame FxChain::processSaturation(FxStereoFrame input, const SynthParamet
     if (mixStates[0] <= 0.0f)
         return input;
     const auto drive = mixStates[6];
+    if (drive != cachedDistortionDrive || parameters.fx.distortionMode != cachedDistortionMode)
+    {
+        cachedDistortionDrive = drive;
+        cachedDistortionMode = parameters.fx.distortionMode;
+        cachedDistortionGain = distortionGainFor(cachedDistortionMode, drive);
+    }
+    const auto gain = cachedDistortionGain;
     auto distort = [&](float sample) noexcept {
         switch (parameters.fx.distortionMode)
         {
-            case DistortionMode::Soft: return overdriveDistort(sample, drive);
-            case DistortionMode::Clip: return clipDistort(sample, drive);
-            case DistortionMode::Fold: return foldDistort(sample, drive);
+            case DistortionMode::Soft: return overdriveDistort(sample, gain);
+            case DistortionMode::Clip: return clipDistort(sample, gain);
+            case DistortionMode::Fold: return foldDistort(sample, gain);
             case DistortionMode::Decimate: return sample;
             case DistortionMode::Bitcrush: {
                 const auto bits = std::clamp(16 - static_cast<int>(drive * 14.0f), 2, 16);

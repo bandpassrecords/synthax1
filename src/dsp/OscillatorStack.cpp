@@ -70,6 +70,7 @@ void OscillatorStack::prepare(double newSampleRate) noexcept
 {
     sampleRate = std::isfinite(newSampleRate) && newSampleRate > 0.0 ? newSampleRate : 44100.0;
     cachedBaseFrequencyValid = false;
+    cachedNativeNote = -1.0e9f;
     reset(0.0f);
 }
 
@@ -114,7 +115,12 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
     const auto rate = static_cast<float>(sampleRate);
     const auto note = midiNote + static_cast<float>(parameters.octave * 12 + parameters.note)
         + parameters.fineCents * 0.01f + pitchModSemitones;
-    const auto frequency = clampFast(midiNoteToHz(note), 1.0f, rate * 0.45f);
+    if (note != cachedNativeNote)
+    {
+        cachedNativeNote = note;
+        cachedNativeFrequency = clampFast(midiNoteToHz(note), 1.0f, rate * 0.45f);
+    }
+    const auto frequency = cachedNativeFrequency;
     const auto detune = clampUnitFast(parameters.detune);
     updateDetuneRatios(count, detune);
     // MEASURED (the reference synth 3.0.7.3, sweeps/unison): n coherent voices add up to an amplitude of

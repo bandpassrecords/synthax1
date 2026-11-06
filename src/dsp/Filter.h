@@ -25,6 +25,17 @@ public:
 
     static float cutoffSemitonesToHz(float semitones) noexcept;
 
+    // Reuses the cutoff-dependent coefficient another filter just computed for the same cutoff
+    // and sample rate (the left and right filters of a voice), so the tan runs once, not twice.
+    void shareCutoffFrom(const Filter& other) noexcept
+    {
+        cachedCutoffSemitones = other.cachedCutoffSemitones;
+        cachedEffectiveSampleRate = other.cachedEffectiveSampleRate;
+        cachedCoefficient = other.cachedCoefficient;
+        cachedHighpassLeak = other.cachedHighpassLeak;
+        cachedCoefficientMode = other.cachedCoefficientMode;
+    }
+
 private:
     void processStages(float input, float coefficient, float feedback, float driveGain) noexcept;
     float processCoreL4(float input, float coefficient, float feedback, float driveGain) noexcept;
@@ -44,6 +55,7 @@ private:
     float cachedDriveGain = 1.0f;
     float cachedDriveLimit = 1.0e4f;
     float cachedHighpassLeak = 0.0f;
+    int cachedCoefficientMode = -1; // the mode the cached coefficient and leak were computed for
     float cachedFeedback = 0.0f;
     bool preparedEnabled = false;
     bool preparedWarmDrive = false;

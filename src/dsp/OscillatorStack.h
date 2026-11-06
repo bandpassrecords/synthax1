@@ -63,6 +63,9 @@ private:
     std::array<float, maxStackCount> nativePanLeft {};
     std::array<float, maxStackCount> nativePanRight {};
     int cachedNativePanCount = -1;
+    // The last pitch and its frequency, so a held note looks the table up only when it moves.
+    float cachedNativeNote = -1.0e9f;
+    float cachedNativeFrequency = 0.0f;
     float cachedNativePan = 0.0f;
     float cachedNativeStereo = 0.0f;
     float subPhase = 0.0f;

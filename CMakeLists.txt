@@ -165,6 +165,7 @@ target_link_libraries(Synthax1Render
         juce::juce_audio_processors
         juce::juce_dsp
         juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
 target_compile_definitions(Synthax1Render

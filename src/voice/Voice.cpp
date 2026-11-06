@@ -458,6 +458,7 @@ StereoFrame Voice::renderNative(const SynthParameters& parameters, const LfoFram
         for (auto& channel : partFilters[part]) channel.prepareBlock(settings);
         const auto cutoffModulation = cutoff + clampFast(nativeModulation[filterOffset], -136.0f, 136.0f);
         input.left = partFilters[part][0].processPrepared(input.left, note, settings, cutoffModulation);
+        partFilters[part][1].shareCutoffFrom(partFilters[part][0]);
         input.right = partFilters[part][1].processPrepared(input.right, note, settings, cutoffModulation);
         const auto layerOffset = static_cast<std::size_t>(26 + partIndex * 2);
         // Part level modulation is added to the part's linear gain, as the reference synth adds it to the Mix knob

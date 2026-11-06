@@ -76,11 +76,28 @@ SYNTHAX1_ALWAYS_INLINE bool isTiny(float value) noexcept
 // Coefficient of one topology-preserving (zero-delay-feedback) one-pole stage:
 // G = g / (1 + g) with the bilinear-prewarped g = tan(pi fc / fs), so the stage's -3 dB
 // point and the ladder's resonance sit exactly at the requested cutoff up to Nyquist.
+// G depends only on fc / fs, so it is tabulated once over [0, 0.5) and interpolated: a
+// modulated cutoff then needs no tan per sample. The table error is below 3e-6 relative above
+// fs / 1000 and 6e-5 at the 8 Hz floor, at most 0.001 semitone of cutoff.
+constexpr int ladderTableSize = 8192; // steps over fc / fs in [0, 0.5]
+
+const std::array<float, ladderTableSize + 2> ladderTable = [] {
+    std::array<float, ladderTableSize + 2> table {};
+    for (int i = 0; i < ladderTableSize + 2; ++i)
+    {
+        const auto ratio = std::min(0.4999, 0.5 * static_cast<double>(i) / ladderTableSize);
+        const auto g = std::tan(3.14159265358979323846 * ratio);
+        table[static_cast<std::size_t>(i)] = static_cast<float>(g / (1.0 + g));
+    }
+    return table;
+}();
+
 float ladderCoefficient(float cutoffHz, float sampleRate) noexcept
 {
-    constexpr float pi = 3.14159265358979323846f;
-    const auto g = std::tan(pi * cutoffHz / sampleRate);
-    return g / (1.0f + g);
+    const auto position = std::clamp(cutoffHz / sampleRate, 0.0f, 0.4999f) * (2.0f * ladderTableSize);
+    const auto index = static_cast<std::size_t>(position);
+    const auto fraction = position - static_cast<float>(index);
+    return ladderTable[index] + (ladderTable[index + 1] - ladderTable[index]) * fraction;
 }
 
 // MEASURED (the reference synth 3.0.7.3, sweeps/drive, 44 programs): drive is a pre-gain followed by a limiter that
@@ -161,6 +178,7 @@ void Filter::reset() noexcept
     ladderInput = 0.0f;
     previousInput = 0.0f;
     cachedCutoffSemitones = -1.0f;
+    cachedCoefficientMode = -1;
     cachedEffectiveSampleRate = 0.0f;
     cachedCoefficient = 0.0f;
     cachedDriveAmount = -1.0f;
@@ -188,7 +206,8 @@ float Filter::process(float input, float midiNote, const SynthParameters& parame
     const auto useL4FastPath = filter.mode == FilterMode::L4;
 
     if (std::abs(cachedCutoffSemitones - cutoffSemitones) > 0.000001f
-        || std::abs(cachedEffectiveSampleRate - effectiveSampleRate) > 0.001f)
+        || std::abs(cachedEffectiveSampleRate - effectiveSampleRate) > 0.001f
+        || cachedCoefficientMode != static_cast<int>(filter.mode))
     {
         // MEASURED (sweeps/hpresp): the reference synth's highpass corner stops rising near 6 kHz however far the knob goes.
         const auto highpass = filter.mode == FilterMode::H2 || filter.mode == FilterMode::H4;
@@ -196,8 +215,9 @@ float Filter::process(float input, float midiNote, const SynthParameters& parame
         const auto safeSampleRate = effectiveSampleRate > 1000.0f ? effectiveSampleRate : 1000.0f;
         cachedCoefficient = clampFast(ladderCoefficient(cutoffHz, safeSampleRate), 0.00001f, 0.99f);
         cachedCutoffSemitones = cutoffSemitones;
-        cachedHighpassLeak = highpassLeakFor(cutoffSemitones, filter.mode == FilterMode::H4);
+        cachedHighpassLeak = highpass ? highpassLeakFor(cutoffSemitones, filter.mode == FilterMode::H4) : 0.0f;
         cachedEffectiveSampleRate = effectiveSampleRate;
+        cachedCoefficientMode = static_cast<int>(filter.mode);
     }
 
     if (std::abs(cachedDriveAmount - driveAmount) > 0.000001f
@@ -290,7 +310,8 @@ float Filter::processPrepared(float input, float midiNote, const FilterParameter
                                                       + cutoffModSemitones,
                                                   0.0f, 136.0f);
     if (std::abs(cachedCutoffSemitones - cutoffSemitones) > 0.000001f
-        || std::abs(cachedEffectiveSampleRate - preparedEffectiveSampleRate) > 0.001f)
+        || std::abs(cachedEffectiveSampleRate - preparedEffectiveSampleRate) > 0.001f
+        || cachedCoefficientMode != static_cast<int>(preparedMode))
     {
         const auto highpass = preparedMode == FilterMode::H2 || preparedMode == FilterMode::H4;
         const auto cutoffHz = clampFast(cutoffSemitonesToHz(highpass ? std::min(cutoffSemitones, 113.0f) : cutoffSemitones), 8.0f,
@@ -298,8 +319,10 @@ float Filter::processPrepared(float input, float midiNote, const FilterParameter
         const auto safeSampleRate = preparedEffectiveSampleRate > 1000.0f ? preparedEffectiveSampleRate : 1000.0f;
         cachedCoefficient = clampFast(ladderCoefficient(cutoffHz, safeSampleRate), 0.00001f, 0.99f);
         cachedCutoffSemitones = cutoffSemitones;
-        cachedHighpassLeak = highpassLeakFor(cutoffSemitones, preparedMode == FilterMode::H4);
+        // The leak only feeds the highpass outputs, and its pow is skipped for every other mode.
+        cachedHighpassLeak = highpass ? highpassLeakFor(cutoffSemitones, preparedMode == FilterMode::H4) : 0.0f;
         cachedEffectiveSampleRate = preparedEffectiveSampleRate;
+        cachedCoefficientMode = static_cast<int>(preparedMode);
     }
 
     if (preparedOversampling <= 1)
