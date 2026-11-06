@@ -502,7 +502,9 @@ void mapLfo(Builder& b, const std::string& prefix, int number, F free, F gain, F
         b.approximated("LFO " + std::to_string(number) + " waveform " + lfoWaves[shape] + " played as "
                        + lfoWaveToSynthax1[shape].synthax1);
     b.set(prefix + "gain", b.raw(gain));
-    b.set(prefix + "offset", bipolar(b.raw(offset)));
+    // MEASURED (sweeps/lfooffset): the reference synth's LFO output is Gain x (wave + Offset), so Offset moves the centre by
+    // Gain times as much (Gain 0 leaves nothing, whatever Offset says); Synthax1 adds its offset after the gain.
+    b.set(prefix + "offset", bipolar(b.raw(offset)) * b.raw(gain));
     b.flag(prefix + "free", b.on(free));
     // Free-running LFOs ignore Sync; otherwise Sync selects tempo divisions.
     if (synced && !b.on(free))
