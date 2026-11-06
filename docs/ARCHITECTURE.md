@@ -33,6 +33,8 @@ Global sync and LFO free-running behavior are evaluated live without accidental 
 
 Voices render in blocks of up to 64 samples. Within a block, each voice first computes its modulation sample by sample, because the LFO rate, gain and offset destinations read the previous sample's modulation. Its oscillators and filters then run over the whole block, one module at a time, and the allocator mixes the voices sample by sample in active-list order. The result is identical, bit for bit, to rendering one sample at a time; the arpeggiator path splits blocks at its events. Keep that equality when changing this code, and check it by rendering the parity sets in `research/parity` before and after.
 
+`SynthParameters::modulationIntervalSamples` (engine setting, not a preset parameter; default 1, the exact path) can instead compute the modulation every N samples on a per-voice grid and ramp each modulated value, including the filter coefficients, between frames. Envelopes, glide and fades stay per sample, and the output does not depend on host block sizes. `Synthax1Render --modulation-interval N` selects it for comparisons. At N = 4 the parity sets stay as close to the reference synth as the exact path while the engine runs about 25% faster. At N = 16, fast LFOs on volume (audio-rate AM) lose their shape.
+
 Source-owned DSP implements documented control behavior. Matching original algorithms, phase response, and timbre is a separate reference-measurement obligation; this architecture description does not establish audio equivalence.
 
 ## Realtime boundary

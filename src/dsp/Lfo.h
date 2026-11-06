@@ -32,6 +32,9 @@ public:
     void resetPhase() noexcept;
     void setNormalizedPhase(float normalizedPhase) noexcept;
     float process() noexcept;
+    // One sample of process() without computing the value (refreshValue computes it later).
+    void advance() noexcept;
+    float refreshValue() noexcept;
 
     float getValue() const noexcept { return value; }
     float getPhase() const noexcept { return phase; }

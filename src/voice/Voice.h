@@ -186,5 +186,24 @@ private:
     float cachedVoiceBi = 0.0f;
     float cachedUnisonUni = 0.0f;
     float cachedUnisonBi = 0.0f;
+
+    // Control-rate modulation (modulationIntervalSamples > 1): the last two modulation frames,
+    // between which each modulated value ramps.
+    struct ControlFrame
+    {
+        float pitch = 0.0f;  // pitch modulation without keytracking, semitones
+        float cutoff = 0.0f; // cutoff modulation without keytracking, semitones
+        float levelDb = 0.0f;
+        float pan = 0.0f;
+        float phaserCenterOffsetHz = 0.0f;
+        std::array<float, nativeModDestinationCount> modulation {};
+        std::array<float, layerCount> filterCoefficient {};
+        std::array<float, layerCount> filterHighpassLeak {};
+    };
+    ControlFrame controlFrom;
+    ControlFrame controlTo;
+    int controlCountdown = 0; // samples until the next frame
+    int controlPosition = 0;  // samples since the last frame
+    bool controlPrimed = false;
 };
 } // namespace synth

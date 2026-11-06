@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 namespace native_validation
@@ -353,6 +354,43 @@ inline bool independentPartReleaseLifetime()
     return stats.activeVoices == 0 && rms(right, right.size()) == 0.0;
 }
 
+// Control-rate modulation keeps its update grid per voice, so the output must not depend on how
+// the host splits its blocks; and it must stay close to the sample-exact path.
+inline bool controlRateModulationIgnoresBlockSplits()
+{
+    auto state = parameters();
+    state.modulationIntervalSamples = 4;
+    state.layers[0].filter.enabled = true;
+    state.layers[0].filter.resonance = 0.6f;
+    state.lfo.rateMode = synth::LfoRateMode::Hz;
+    state.lfo.rateHz = 7.0f;
+    state.lfo.shape = synth::LfoShapeChoice::Sine;
+    auto& slot = state.transMod.slots[0];
+    slot.enabled = true;
+    slot.source = synth::ModSource::Lfo;
+    slot.nativeDepths[static_cast<std::size_t>(synth::NativeModDestination::FilterACutoff)] = 24.0f;
+    slot.nativeDepths[static_cast<std::size_t>(synth::NativeModDestination::LayerAPan)] = 0.5f;
+    const auto render = [&state](int chunk) {
+        constexpr int samples = 6000;
+        std::vector<float> left(samples), right(samples);
+        synth::SynthEngine engine;
+        engine.prepare(48000.0, 64);
+        engine.setParameters(state);
+        engine.noteOn(60, 1.0f);
+        for (int offset = 0; offset < samples; offset += chunk)
+            engine.process(left.data() + offset, right.data() + offset, std::min(chunk, samples - offset));
+        return std::pair { left, right };
+    };
+    const auto whole = render(64);
+    const auto split = render(7);
+    if (whole.first != split.first || whole.second != split.second)
+        return false;
+    auto exact = state;
+    exact.modulationIntervalSamples = 1;
+    const auto reference = native_validation::render(exact, 6000);
+    return reference.finite && difference(reference.left, whole.first) < 0.02f;
+}
+
 inline bool run()
 {
     const struct Case
@@ -368,7 +406,8 @@ inline bool run()
         { "part/master volume endpoints silence held notes and restore", volumeEndpoints },
         { "shared resonance route affects independent A/B filters", sharedResonanceRoute },
         { "global modulation selects most recent active voice without attenuation", globalModulationVoiceSelection },
-        { "Part B release continues after Part A and ends the voice", independentPartReleaseLifetime }
+        { "Part B release continues after Part A and ends the voice", independentPartReleaseLifetime },
+        { "control-rate modulation ignores host block splits", controlRateModulationIgnoresBlockSplits }
     };
     auto passed = true;
     for (const auto& item : cases)

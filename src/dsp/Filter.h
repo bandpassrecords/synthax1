@@ -29,6 +29,15 @@ public:
                                     float midiNote, const FilterParameters& parameters,
                                     float cutoffModSemitones) noexcept;
 
+    // Control-rate path (modulationIntervalSamples > 1). The caller computes the cutoff coefficient
+    // and high-pass leak at its modulation frames and ramps them; the pair then runs a ladder with
+    // one division per channel instead of four, which differs from processPrepared by rounding only.
+    float preparedCutoffSemitones(float midiNote, const FilterParameters& parameters,
+                                  float cutoffModSemitones) const noexcept;
+    void preparedCoefficients(float cutoffSemitones, float& coefficient, float& highpassLeak) const noexcept;
+    static void processRampedPair(Filter& left, Filter& right, float& leftSample, float& rightSample,
+                                  float coefficient, float highpassLeak) noexcept;
+
     static float cutoffSemitonesToHz(float semitones) noexcept;
 
     // Reuses the cutoff-dependent coefficient another filter just computed for the same cutoff
@@ -65,6 +74,7 @@ private:
     float cachedResonance = -1.0f;
     float cachedDriveGain = 1.0f;
     float cachedDriveLimit = 1.0e4f;
+    float cachedInverseDriveLimit = 1.0e-4f;
     float cachedHighpassLeak = 0.0f;
     int cachedCoefficientMode = -1; // the mode the cached coefficient and leak were computed for
     float cachedFeedback = 0.0f;

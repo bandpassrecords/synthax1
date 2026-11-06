@@ -110,12 +110,16 @@ HOT_AUDIO_FUNCTIONS = {
         "void Filter::processStages(",
         "void Filter::processStagesPair(",
         "float Filter::tapOutput(",
+        "void Filter::preparedCoefficients(",
+        "void Filter::processRampedPair(",
     ),
     "src/dsp/Lfo.cpp": (
         "float Lfo::process()",
         "float Lfo::valueForPhase(",
         "void Lfo::setNormalizedPhase(",
         "void Lfo::setPhaseDegrees(",
+        "void Lfo::advance()",
+        "float Lfo::refreshValue()",
     ),
     "src/dsp/OscillatorStack.cpp": (
         "float OscillatorStack::renderSample(float midiNote, const SynthParameters& parameters,",

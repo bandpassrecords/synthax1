@@ -95,6 +95,27 @@ float Lfo::process() noexcept
     return value;
 }
 
+void Lfo::advance() noexcept
+{
+    const auto previousPhase = phase;
+    phase += phaseIncrement;
+    if (phase >= 1.0f)
+        phase -= std::floor(phase);
+    const auto crossed = phase < previousPhase || (previousPhase < 0.5f && phase >= 0.5f);
+    if ((shape == LfoShape::SampleHold || shape == LfoShape::Noise) && crossed)
+    {
+        previousRandom = heldRandom;
+        randomState = randomState * 1664525u + 1013904223u;
+        heldRandom = (static_cast<float>((randomState >> 8) & 0x00ffffffu) / 8388607.5f) - 1.0f;
+    }
+}
+
+float Lfo::refreshValue() noexcept
+{
+    value = valueForPhase(phase);
+    return value;
+}
+
 float Lfo::valueForPhase(float phaseValue) noexcept
 {
     phaseValue -= std::floor(phaseValue);

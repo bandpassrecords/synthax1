@@ -47,6 +47,7 @@ struct Options
     double benchSeconds = 8.0;
     int benchReps = 5;
     int benchBlock = 512;
+    int modulationInterval = 1;
     std::string suite;
     std::filesystem::path output = "build/reports/smoke.json";
     std::filesystem::path report = "build/reports/render.json";
@@ -295,6 +296,10 @@ Options parseOptions(int argc, char* argv[])
         else if (arg == "--bench-reps" && i + 1 < argc)
         {
             options.benchReps = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+        }
+        else if (arg == "--modulation-interval" && i + 1 < argc)
+        {
+            options.modulationInterval = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
         }
         else if (arg == "--bench-block" && i + 1 < argc)
         {
@@ -3258,6 +3263,7 @@ int runPerfBench(const Options& options)
     std::vector<RepResult> repResults;
     repResults.reserve(static_cast<std::size_t>(reps));
 
+    parameters.modulationIntervalSamples = options.modulationInterval;
     for (int rep = 0; rep < reps; ++rep)
     {
         synth::SynthEngine engine;
@@ -3432,6 +3438,7 @@ int renderLegacyBank(const Options& options)
             continue;
         }
         parameters.tempoBpm = tempo;
+        parameters.modulationIntervalSamples = options.modulationInterval;
         parameters.performance.modWheel = static_cast<float>(imported.state.getProperty("legacy_mod_wheel", 0.0f));
         parameters.fx.enabled = true; // the rack is always on in the plugin; modules switch themselves
 

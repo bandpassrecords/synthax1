@@ -198,6 +198,8 @@ void Voice::noteOn(int note, float normalizedVelocity, float randomValue,
             for (auto& part : partFilters)
                 for (auto& channel : part) channel.reset();
         }
+        controlCountdown = 0;
+        controlPrimed = false;
         modEnvelope.noteOn();
         if (!parameters.lfo.free && (parameters.lfo.gateMode == LfoGateMode::Poly || parameters.lfo.gateMode == LfoGateMode::PolyOn))
             lfo.resetPhase();
@@ -279,6 +281,9 @@ void Voice::reset() noexcept
     lastDirectSums = {};
     lastTransModSums = {};
     lastRampValue = 0.0f;
+    controlCountdown = 0;
+    controlPosition = 0;
+    controlPrimed = false;
     modulatorConfigInitialized = false;
 }
 
@@ -379,6 +384,7 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
     static const Lane zeroLane {};
     Lane noteLane, pitchLane, cutoffLane, fadeLane, transModLevelDbLane, transModPanLane;
     std::array<Lane, layerCount> ampLane;
+    std::array<Lane, layerCount> coefficientLane, leakLane; // control rate only
     std::array<Lane, nativeModDestinationCount> modLanes; // filled only for live destinations
     const auto lane = [&plan, &modLanes](int destination) noexcept -> const float* {
         const auto index = static_cast<std::size_t>(destination);
@@ -393,6 +399,8 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
     };
     const auto baseRate1 = clampFast(rate(parameters.lfo, parameters.tempoBpm), 0.01f, 100.0f);
     const auto baseRate2 = clampFast(rate(parameters.lfo2, parameters.tempoBpm), 0.01f, 100.0f);
+    const auto interval = clampIntFast(parameters.modulationIntervalSamples, 1, renderBlockMaxSamples);
+    const auto exactPath = interval == 1;
 
     // Modulation, one sample at a time: the LFO rate, gain and offset destinations take the previous
     // sample's modulation, so this part cannot run as a block.
@@ -421,81 +429,204 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
         const auto mod = modEnvelope.process();
         nativeModEnv2Value = modEnvelope2.process();
         nativeAmpEnv2Value = ampValues[1];
-        const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, 100.0f);
-        const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, 100.0f);
-        lfo.setRateHz(effectiveRate1);
-        lfo2.setRateHz(effectiveRate2);
-        const auto* monoLfoValue = monoLfoValues != nullptr ? &monoLfoValues[i] : nullptr;
-        const auto* monoLfo2Value = monoLfo2Values != nullptr ? &monoLfo2Values[i] : nullptr;
-        if (monoLfoValue != nullptr)
+        if (exactPath)
         {
-            nativeLfo1PhaseOffset += (effectiveRate1 - baseRate1) / static_cast<float>(sampleRate);
-            nativeLfo1PhaseOffset -= std::floor(nativeLfo1PhaseOffset);
-            lfo.setNormalizedPhase(monoLfoValue->phase + nativeLfo1PhaseOffset);
-        }
-        if (monoLfo2Value != nullptr)
-        {
-            nativeLfo2PhaseOffset += (effectiveRate2 - baseRate2) / static_cast<float>(sampleRate);
-            nativeLfo2PhaseOffset -= std::floor(nativeLfo2PhaseOffset);
-            lfo2.setNormalizedPhase(monoLfo2Value->phase + nativeLfo2PhaseOffset);
-        }
-        const auto lfoValue = clampFast((monoLfoValue == nullptr ? lfo.process() : (nativeLfo1PhaseOffset == 0.0f ? monoLfoValue->value : lfo.getValue()))
-                                                * clampFast(parameters.lfo.gain + destination(NativeModDestination::Lfo1Gain), 0.0f, 2.0f)
-                                            + parameters.lfo.offset + destination(NativeModDestination::Lfo1Offset),
+            const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, 100.0f);
+            const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, 100.0f);
+            lfo.setRateHz(effectiveRate1);
+            lfo2.setRateHz(effectiveRate2);
+            const auto* monoLfoValue = monoLfoValues != nullptr ? &monoLfoValues[i] : nullptr;
+            const auto* monoLfo2Value = monoLfo2Values != nullptr ? &monoLfo2Values[i] : nullptr;
+            if (monoLfoValue != nullptr)
+            {
+                nativeLfo1PhaseOffset += (effectiveRate1 - baseRate1) / static_cast<float>(sampleRate);
+                nativeLfo1PhaseOffset -= std::floor(nativeLfo1PhaseOffset);
+                lfo.setNormalizedPhase(monoLfoValue->phase + nativeLfo1PhaseOffset);
+            }
+            if (monoLfo2Value != nullptr)
+            {
+                nativeLfo2PhaseOffset += (effectiveRate2 - baseRate2) / static_cast<float>(sampleRate);
+                nativeLfo2PhaseOffset -= std::floor(nativeLfo2PhaseOffset);
+                lfo2.setNormalizedPhase(monoLfo2Value->phase + nativeLfo2PhaseOffset);
+            }
+            const auto lfoValue = clampFast((monoLfoValue == nullptr ? lfo.process() : (nativeLfo1PhaseOffset == 0.0f ? monoLfoValue->value : lfo.getValue()))
+                                                    * clampFast(parameters.lfo.gain + destination(NativeModDestination::Lfo1Gain), 0.0f, 2.0f)
+                                                + parameters.lfo.offset + destination(NativeModDestination::Lfo1Offset),
+                                            -2.0f, 2.0f);
+            nativeLfo2Value = clampFast((monoLfo2Value == nullptr ? lfo2.process() : (nativeLfo2PhaseOffset == 0.0f ? monoLfo2Value->value : lfo2.getValue()))
+                                                * clampFast(parameters.lfo2.gain + destination(NativeModDestination::Lfo2Gain), 0.0f, 2.0f)
+                                            + parameters.lfo2.offset + destination(NativeModDestination::Lfo2Offset),
                                         -2.0f, 2.0f);
-        nativeLfo2Value = clampFast((monoLfo2Value == nullptr ? lfo2.process() : (nativeLfo2PhaseOffset == 0.0f ? monoLfo2Value->value : lfo2.getValue()))
-                                            * clampFast(parameters.lfo2.gain + destination(NativeModDestination::Lfo2Gain), 0.0f, 2.0f)
-                                        + parameters.lfo2.offset + destination(NativeModDestination::Lfo2Offset),
-                                    -2.0f, 2.0f);
-        const auto rampValue = ramp.process(parameters.ramp, parameters.tempoBpm);
-        lastRampValue = rampValue;
+            const auto rampValue = ramp.process(parameters.ramp, parameters.tempoBpm);
+            lastRampValue = rampValue;
 
-        std::array<float, transModSlotCount> amounts {};
-        std::array<bool, transModSlotCount> amountsFinite {};
-        for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
-        {
-            const auto& slot = parameters.transMod.slots[static_cast<std::size_t>(plan.routes[static_cast<std::size_t>(routeIndex)].slot)];
-            const auto source = evalModSource(parameters, slot.source, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
-            const auto scaler = slot.scaler == ModSource::None ? 1.0f
-                                                               : evalModSource(parameters, slot.scaler, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
-            amounts[static_cast<std::size_t>(routeIndex)] = source * scaler;
-            amountsFinite[static_cast<std::size_t>(routeIndex)] = std::isfinite(source * scaler);
-        }
-        lastTransModSums = evaluateTransMod(parameters, plan, amounts.data(), amountsFinite.data());
-        nativeModulation.fill(0.0f);
-        for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
-        {
-            if (!amountsFinite[static_cast<std::size_t>(routeIndex)])
-                continue;
-            const auto& route = plan.routes[static_cast<std::size_t>(routeIndex)];
-            const auto amount = amounts[static_cast<std::size_t>(routeIndex)];
-            for (int entry = 0; entry < route.destinationCount; ++entry)
-                nativeModulation[route.destinations[static_cast<std::size_t>(entry)]] += amount * route.depths[static_cast<std::size_t>(entry)];
-        }
-        const auto keytrack = (note - 60.0f) / 12.0f;
-        const auto pitch = keytrack * parameters.direct.oscKeytrackSemitones
-            + lfoValue * parameters.direct.oscLfoSemitones + mod * parameters.direct.oscModEnvSemitones
-            + lastTransModSums.oscPitchSemitones
-            + parameters.performance.pitchBend * parameters.pitchBendRange;
-        const auto cutoff = (note - 60.0f) * parameters.direct.filterKeytrack
-            + lfoValue * parameters.direct.filterLfoSemitones + mod * parameters.direct.filterModEnvSemitones
-            + lastTransModSums.filterCutoffSemitones;
-        lastDirectSums.oscPitchSemitones = pitch - lastTransModSums.oscPitchSemitones;
-        lastDirectSums.filterCutoffSemitones = cutoff - lastTransModSums.filterCutoffSemitones;
+            std::array<float, transModSlotCount> amounts {};
+            std::array<bool, transModSlotCount> amountsFinite {};
+            for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
+            {
+                const auto& slot = parameters.transMod.slots[static_cast<std::size_t>(plan.routes[static_cast<std::size_t>(routeIndex)].slot)];
+                const auto source = evalModSource(parameters, slot.source, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
+                const auto scaler = slot.scaler == ModSource::None ? 1.0f
+                                                                   : evalModSource(parameters, slot.scaler, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
+                amounts[static_cast<std::size_t>(routeIndex)] = source * scaler;
+                amountsFinite[static_cast<std::size_t>(routeIndex)] = std::isfinite(source * scaler);
+            }
+            lastTransModSums = evaluateTransMod(parameters, plan, amounts.data(), amountsFinite.data());
+            nativeModulation.fill(0.0f);
+            for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
+            {
+                if (!amountsFinite[static_cast<std::size_t>(routeIndex)])
+                    continue;
+                const auto& route = plan.routes[static_cast<std::size_t>(routeIndex)];
+                const auto amount = amounts[static_cast<std::size_t>(routeIndex)];
+                for (int entry = 0; entry < route.destinationCount; ++entry)
+                    nativeModulation[route.destinations[static_cast<std::size_t>(entry)]] += amount * route.depths[static_cast<std::size_t>(entry)];
+            }
+            const auto keytrack = (note - 60.0f) / 12.0f;
+            const auto pitch = keytrack * parameters.direct.oscKeytrackSemitones
+                + lfoValue * parameters.direct.oscLfoSemitones + mod * parameters.direct.oscModEnvSemitones
+                + lastTransModSums.oscPitchSemitones
+                + parameters.performance.pitchBend * parameters.pitchBendRange;
+            const auto cutoff = (note - 60.0f) * parameters.direct.filterKeytrack
+                + lfoValue * parameters.direct.filterLfoSemitones + mod * parameters.direct.filterModEnvSemitones
+                + lastTransModSums.filterCutoffSemitones;
+            lastDirectSums.oscPitchSemitones = pitch - lastTransModSums.oscPitchSemitones;
+            lastDirectSums.filterCutoffSemitones = cutoff - lastTransModSums.filterCutoffSemitones;
 
-        noteLane[sample] = note;
-        pitchLane[sample] = pitch;
-        cutoffLane[sample] = cutoff;
-        for (std::size_t part = 0; part < ampLane.size(); ++part)
-            ampLane[part][sample] = ampValues[part];
-        transModLevelDbLane[sample] = lastTransModSums.ampLevelDb;
-        transModPanLane[sample] = lastTransModSums.pan;
-        for (int entry = 0; entry < plan.liveCount; ++entry)
-        {
-            const auto id = plan.liveDestinations[static_cast<std::size_t>(entry)];
-            modLanes[id][sample] = nativeModulation[id];
+            noteLane[sample] = note;
+            pitchLane[sample] = pitch;
+            cutoffLane[sample] = cutoff;
+            for (std::size_t part = 0; part < ampLane.size(); ++part)
+                ampLane[part][sample] = ampValues[part];
+            transModLevelDbLane[sample] = lastTransModSums.ampLevelDb;
+            transModPanLane[sample] = lastTransModSums.pan;
+            for (int entry = 0; entry < plan.liveCount; ++entry)
+            {
+                const auto id = plan.liveDestinations[static_cast<std::size_t>(entry)];
+                modLanes[id][sample] = nativeModulation[id];
+            }
+            output.phaserCenterOffsetHz[i] = clampFast(destination(NativeModDestination::PhaserCenterFrequency), -20000.0f, 20000.0f);
         }
-        output.phaserCenterOffsetHz[i] = clampFast(destination(NativeModDestination::PhaserCenterFrequency), -20000.0f, 20000.0f);
+        else
+        {
+            // Control rate: a new modulation frame every `interval` samples, from the modulators'
+            // state at that sample; in between, each modulated value ramps from the previous frame
+            // to the new one. The envelopes, glide and fade above stay exact per sample.
+            const auto* monoLfoValue = monoLfoValues != nullptr ? &monoLfoValues[i] : nullptr;
+            const auto* monoLfo2Value = monoLfo2Values != nullptr ? &monoLfo2Values[i] : nullptr;
+            if (controlCountdown <= 0)
+            {
+                const auto elapsed = static_cast<float>(controlPrimed ? interval : 1);
+                const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, 100.0f);
+                const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, 100.0f);
+                lfo.setRateHz(effectiveRate1);
+                lfo2.setRateHz(effectiveRate2);
+                if (monoLfoValue != nullptr)
+                {
+                    nativeLfo1PhaseOffset += elapsed * (effectiveRate1 - baseRate1) / static_cast<float>(sampleRate);
+                    nativeLfo1PhaseOffset -= std::floor(nativeLfo1PhaseOffset);
+                    lfo.setNormalizedPhase(monoLfoValue->phase + nativeLfo1PhaseOffset);
+                }
+                if (monoLfo2Value != nullptr)
+                {
+                    nativeLfo2PhaseOffset += elapsed * (effectiveRate2 - baseRate2) / static_cast<float>(sampleRate);
+                    nativeLfo2PhaseOffset -= std::floor(nativeLfo2PhaseOffset);
+                    lfo2.setNormalizedPhase(monoLfo2Value->phase + nativeLfo2PhaseOffset);
+                }
+                const auto lfoValue = clampFast((monoLfoValue == nullptr ? lfo.process() : (nativeLfo1PhaseOffset == 0.0f ? monoLfoValue->value : lfo.getValue()))
+                                                    * clampFast(parameters.lfo.gain + destination(NativeModDestination::Lfo1Gain), 0.0f, 2.0f)
+                                                + parameters.lfo.offset + destination(NativeModDestination::Lfo1Offset),
+                                            -2.0f, 2.0f);
+                nativeLfo2Value = clampFast((monoLfo2Value == nullptr ? lfo2.process() : (nativeLfo2PhaseOffset == 0.0f ? monoLfo2Value->value : lfo2.getValue()))
+                                                * clampFast(parameters.lfo2.gain + destination(NativeModDestination::Lfo2Gain), 0.0f, 2.0f)
+                                            + parameters.lfo2.offset + destination(NativeModDestination::Lfo2Offset),
+                                        -2.0f, 2.0f);
+                const auto rampValue = ramp.process(parameters.ramp, parameters.tempoBpm);
+                lastRampValue = rampValue;
+
+                std::array<float, transModSlotCount> amounts {};
+                std::array<bool, transModSlotCount> amountsFinite {};
+                for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
+                {
+                    const auto& slot = parameters.transMod.slots[static_cast<std::size_t>(plan.routes[static_cast<std::size_t>(routeIndex)].slot)];
+                    const auto source = evalModSource(parameters, slot.source, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
+                    const auto scaler = slot.scaler == ModSource::None ? 1.0f
+                                                                       : evalModSource(parameters, slot.scaler, lfoValue, rampValue, mod, ampValues[0], note, glidedVelocity);
+                    amounts[static_cast<std::size_t>(routeIndex)] = source * scaler;
+                    amountsFinite[static_cast<std::size_t>(routeIndex)] = std::isfinite(source * scaler);
+                }
+                lastTransModSums = evaluateTransMod(parameters, plan, amounts.data(), amountsFinite.data());
+                nativeModulation.fill(0.0f);
+                for (int routeIndex = 0; routeIndex < plan.routeCount; ++routeIndex)
+                {
+                    if (!amountsFinite[static_cast<std::size_t>(routeIndex)])
+                        continue;
+                    const auto& route = plan.routes[static_cast<std::size_t>(routeIndex)];
+                    const auto amount = amounts[static_cast<std::size_t>(routeIndex)];
+                    for (int entry = 0; entry < route.destinationCount; ++entry)
+                        nativeModulation[route.destinations[static_cast<std::size_t>(entry)]] += amount * route.depths[static_cast<std::size_t>(entry)];
+                }
+                ControlFrame frame;
+                frame.pitch = lfoValue * parameters.direct.oscLfoSemitones + mod * parameters.direct.oscModEnvSemitones
+                    + lastTransModSums.oscPitchSemitones + parameters.performance.pitchBend * parameters.pitchBendRange;
+                frame.cutoff = lfoValue * parameters.direct.filterLfoSemitones + mod * parameters.direct.filterModEnvSemitones
+                    + lastTransModSums.filterCutoffSemitones;
+                frame.levelDb = lastTransModSums.ampLevelDb;
+                frame.pan = lastTransModSums.pan;
+                frame.phaserCenterOffsetHz = clampFast(destination(NativeModDestination::PhaserCenterFrequency), -20000.0f, 20000.0f);
+                frame.modulation = nativeModulation;
+                for (int partIndex = 0; partIndex < layerCount; ++partIndex)
+                {
+                    const auto part = static_cast<std::size_t>(partIndex);
+                    if (!preparedPartFilters[part].enabled)
+                        continue;
+                    const auto cutoffModulation = (note - 60.0f) * parameters.direct.filterKeytrack + frame.cutoff
+                        + clampFast(nativeModulation[static_cast<std::size_t>(20 + partIndex * 3)], -136.0f, 136.0f);
+                    const auto& filter = partFilters[part][0];
+                    filter.preparedCoefficients(filter.preparedCutoffSemitones(note, preparedPartFilters[part], cutoffModulation),
+                                                frame.filterCoefficient[part], frame.filterHighpassLeak[part]);
+                }
+                lastDirectSums.oscPitchSemitones = (note - 60.0f) / 12.0f * parameters.direct.oscKeytrackSemitones
+                    + frame.pitch - lastTransModSums.oscPitchSemitones;
+                lastDirectSums.filterCutoffSemitones = (note - 60.0f) * parameters.direct.filterKeytrack
+                    + frame.cutoff - lastTransModSums.filterCutoffSemitones;
+                controlFrom = controlPrimed ? controlTo : frame;
+                controlTo = frame;
+                controlPrimed = true;
+                controlCountdown = interval;
+                controlPosition = 0;
+            }
+            else
+            {
+                if (monoLfoValue == nullptr) lfo.advance();
+                if (monoLfo2Value == nullptr) lfo2.advance();
+                ramp.advance();
+            }
+            --controlCountdown;
+            ++controlPosition;
+            const auto t = static_cast<float>(controlPosition) / static_cast<float>(interval);
+            const auto blend = [t](float from, float to) noexcept { return from + (to - from) * t; };
+            noteLane[sample] = note;
+            pitchLane[sample] = (note - 60.0f) / 12.0f * parameters.direct.oscKeytrackSemitones
+                + blend(controlFrom.pitch, controlTo.pitch);
+            cutoffLane[sample] = (note - 60.0f) * parameters.direct.filterKeytrack
+                + blend(controlFrom.cutoff, controlTo.cutoff);
+            for (std::size_t part = 0; part < ampLane.size(); ++part)
+                ampLane[part][sample] = ampValues[part];
+            transModLevelDbLane[sample] = blend(controlFrom.levelDb, controlTo.levelDb);
+            transModPanLane[sample] = blend(controlFrom.pan, controlTo.pan);
+            for (int entry = 0; entry < plan.liveCount; ++entry)
+            {
+                const auto id = plan.liveDestinations[static_cast<std::size_t>(entry)];
+                modLanes[id][sample] = blend(controlFrom.modulation[id], controlTo.modulation[id]);
+            }
+            output.phaserCenterOffsetHz[i] = blend(controlFrom.phaserCenterOffsetHz, controlTo.phaserCenterOffsetHz);
+            for (std::size_t part = 0; part < coefficientLane.size(); ++part)
+            {
+                coefficientLane[part][sample] = blend(controlFrom.filterCoefficient[part], controlTo.filterCoefficient[part]);
+                leakLane[part][sample] = blend(controlFrom.filterHighpassLeak[part], controlTo.filterHighpassLeak[part]);
+            }
+        }
         fadeLane[sample] = 1.0f;
         if (stopFadeSamples > 0)
         {
@@ -605,6 +736,12 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
                     settings.drive = drive;
                     leftFilter.prepareBlock(settings);
                     rightFilter.prepareBlock(settings);
+                }
+                if (!exactPath)
+                {
+                    Filter::processRampedPair(leftFilter, rightFilter, inputLeft[sample], inputRight[sample],
+                                              coefficientLane[part][sample], leakLane[part][sample]);
+                    continue;
                 }
                 const auto cutoffModulation = cutoffLane[sample] + clampFast(cutoffMod[i], -136.0f, 136.0f);
                 Filter::processPreparedPair(leftFilter, rightFilter, inputLeft[sample], inputRight[sample],

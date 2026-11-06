@@ -187,6 +187,7 @@ void Filter::reset() noexcept
     cachedResonance = -1.0f;
     cachedDriveGain = 1.0f;
     cachedDriveLimit = 1.0e4f;
+    cachedInverseDriveLimit = 1.0e-4f;
     cachedFeedback = 0.0f;
 }
 
@@ -227,6 +228,7 @@ float Filter::process(float input, float midiNote, const SynthParameters& parame
     {
         cachedDriveGain = driveGainFor(driveAmount);
         cachedDriveLimit = driveLimitFor(driveAmount);
+        cachedInverseDriveLimit = 1.0f / cachedDriveLimit;
         cachedFeedback = resonance * (3.85f / (1.0f + driveAmount * 1.35f));
         cachedDriveAmount = driveAmount;
         cachedResonance = resonance;
@@ -286,6 +288,7 @@ void Filter::prepareBlock(const FilterParameters& filter) noexcept
     {
         cachedDriveGain = driveGainFor(driveAmount);
         cachedDriveLimit = driveLimitFor(driveAmount);
+        cachedInverseDriveLimit = 1.0f / cachedDriveLimit;
         cachedFeedback = resonance * ((filter.selfOscillation ? 4.35f : 3.85f) / (1.0f + driveAmount * 1.35f));
         cachedDriveAmount = driveAmount;
         cachedResonance = resonance;
@@ -390,6 +393,106 @@ void Filter::processPreparedPair(Filter& left, Filter& right, float& leftSample,
         const auto leftInput = left.previousInput + (leftSample - left.previousInput) * t;
         const auto rightInput = right.previousInput + (rightSample - right.previousInput) * t;
         processStagesPair(left, right, leftInput, rightInput);
+        leftValue += output(left, leftInput);
+        rightValue += output(right, rightInput);
+    }
+    left.previousInput = leftSample;
+    right.previousInput = rightSample;
+    leftValue /= static_cast<float>(oversampling);
+    rightValue /= static_cast<float>(oversampling);
+    leftSample = std::isfinite(leftValue) ? leftValue : 0.0f;
+    rightSample = std::isfinite(rightValue) ? rightValue : 0.0f;
+}
+
+float Filter::preparedCutoffSemitones(float midiNote, const FilterParameters& parameters,
+                                      float cutoffModSemitones) const noexcept
+{
+    const auto keytrackSemitones = (midiNote - keytrackReferenceNote) * preparedKeytrack;
+    return clampKnownFinite(parameters.cutoffSemitones + keytrackSemitones + cutoffModSemitones, 0.0f, 136.0f);
+}
+
+void Filter::preparedCoefficients(float cutoffSemitones, float& coefficient, float& highpassLeak) const noexcept
+{
+    const auto highpass = preparedMode == FilterMode::H2 || preparedMode == FilterMode::H4;
+    const auto cutoffHz = clampFast(cutoffSemitonesToHz(highpass ? std::min(cutoffSemitones, 113.0f) : cutoffSemitones), 8.0f,
+                                    0.45f * preparedEffectiveSampleRate);
+    const auto safeSampleRate = preparedEffectiveSampleRate > 1000.0f ? preparedEffectiveSampleRate : 1000.0f;
+    coefficient = clampFast(ladderCoefficient(cutoffHz, safeSampleRate), 0.00001f, 0.99f);
+    highpassLeak = highpass ? highpassLeakFor(cutoffSemitones, preparedMode == FilterMode::H4) : 0.0f;
+}
+
+void Filter::processRampedPair(Filter& left, Filter& right, float& leftSample, float& rightSample,
+                               float coefficient, float highpassLeak) noexcept
+{
+    if (!left.preparedEnabled)
+        return;
+
+    // The exact path's cutoff cache no longer describes the coefficient in use.
+    for (auto* filter : { &left, &right })
+    {
+        filter->cachedCoefficient = coefficient;
+        filter->cachedHighpassLeak = highpassLeak;
+        filter->cachedCutoffSemitones = -1.0f;
+    }
+    const auto G = coefficient;
+    const auto hold = 1.0f - G;
+    const auto w3 = hold;
+    const auto w2 = G * hold;
+    const auto w1 = G * w2;
+    const auto w0 = G * w1;
+    const auto squared = G * G;
+    const auto feedback = left.cachedFeedback;
+    const auto inverseDenominator = 1.0f / (1.0f + feedback * squared * squared);
+    const auto driveGain = left.cachedDriveGain;
+    const auto inverseLimit = left.cachedInverseDriveLimit;
+    const auto ladder = [=](Filter& filter, float input) noexcept {
+        const auto sigma = w0 * filter.stage[0] + w1 * filter.stage[1] + w2 * filter.stage[2] + w3 * filter.stage[3];
+        const auto linear = (input * driveGain - feedback * sigma) * inverseDenominator;
+        auto x = linear * 0.2f;
+        x = x < -3.0f ? -3.0f : (x > 3.0f ? 3.0f : x);
+        const auto x2 = x * x;
+        const auto relative = linear * inverseLimit;
+        const auto relative2 = relative * relative;
+        // 5 fastTanh(x) / (1 + relative^4) as one division
+        filter.ladderInput = 5.0f * x * (27.0f + x2) / ((27.0f + 9.0f * x2) * (1.0f + relative2 * relative2));
+    };
+    const auto mode = left.preparedMode;
+    const auto useL4 = left.preparedUseL4;
+    const auto output = [mode, useL4](const Filter& filter, float input) noexcept {
+        return useL4 ? filter.clippedStage[3] : filter.tapOutput(input, mode);
+    };
+    const auto step = [G, &ladder](Filter& a, Filter& b, float inputA, float inputB) noexcept {
+        ladder(a, inputA);
+        ladder(b, inputB);
+        auto xa = a.ladderInput;
+        auto xb = b.ladderInput;
+        for (int i = 0; i < 4; ++i)
+        {
+            a.runStage(i, xa, G);
+            b.runStage(i, xb, G);
+        }
+    };
+    const auto oversampling = left.preparedOversampling;
+    if (oversampling <= 1)
+    {
+        left.previousInput = leftSample;
+        right.previousInput = rightSample;
+        step(left, right, leftSample, rightSample);
+        const auto leftValue = output(left, leftSample);
+        const auto rightValue = output(right, rightSample);
+        leftSample = std::isfinite(leftValue) ? leftValue : 0.0f;
+        rightSample = std::isfinite(rightValue) ? rightValue : 0.0f;
+        return;
+    }
+
+    auto leftValue = 0.0f;
+    auto rightValue = 0.0f;
+    for (int i = 0; i < oversampling; ++i)
+    {
+        const auto t = static_cast<float>(i + 1) / static_cast<float>(oversampling);
+        const auto leftInput = left.previousInput + (leftSample - left.previousInput) * t;
+        const auto rightInput = right.previousInput + (rightSample - right.previousInput) * t;
+        step(left, right, leftInput, rightInput);
         leftValue += output(left, leftInput);
         rightValue += output(right, rightInput);
     }

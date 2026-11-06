@@ -644,6 +644,9 @@ struct SynthParameters
     QualityParameters quality;
     PerformanceState performance;
     float tempoBpm = 128.0f;
+    // Samples between modulation updates; 1 updates every sample (the exact path). Larger values
+    // compute the modulation every N samples and ramp each modulated value linearly in between.
+    int modulationIntervalSamples = 1;
 };
 
 struct PatchCostEstimate

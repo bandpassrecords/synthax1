@@ -13,6 +13,7 @@ public:
 
     float process(const RampParameters& parameters, float tempoBpm) noexcept;
     float getValue() const noexcept { return value; }
+    void advance() noexcept { ++sampleCounter; } // one sample of process() without its value
 
 private:
     float shape(float phase, RampCurve curve) const noexcept;
