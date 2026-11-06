@@ -69,6 +69,14 @@ bool testAllocator()
     return allocator.activeVoiceCount() == 0;
 }
 
+void renderOneSample(synth::Voice& voice, const synth::SynthParameters& parameters)
+{
+    synth::VoiceModPlan plan;
+    plan.build(parameters.transMod);
+    float left = 0.0f, right = 0.0f, weight = 0.0f, phaserOffset = 0.0f;
+    voice.renderBlock(parameters, plan, nullptr, nullptr, 1, { &left, &right, &weight, &phaserOffset });
+}
+
 bool testForcedStopFadeNormalizationWeight()
 {
     synth::Voice voice;
@@ -83,22 +91,22 @@ bool testForcedStopFadeNormalizationWeight()
     if (std::abs(voice.normalizationPowerWeight() - 1.0f) > 0.0001f)
         return false;
 
-    voice.renderSample(parameters);
+    renderOneSample(voice, parameters);
     const auto firstFadedWeight = voice.normalizationPowerWeight();
     if (std::abs(firstFadedWeight - 0.5625f) > 0.0001f)
         return false;
 
-    voice.renderSample(parameters);
+    renderOneSample(voice, parameters);
     const auto secondFadedWeight = voice.normalizationPowerWeight();
     if (std::abs(secondFadedWeight - 0.25f) > 0.0001f)
         return false;
 
-    voice.renderSample(parameters);
+    renderOneSample(voice, parameters);
     const auto thirdFadedWeight = voice.normalizationPowerWeight();
     if (std::abs(thirdFadedWeight - 0.0625f) > 0.0001f)
         return false;
 
-    voice.renderSample(parameters);
+    renderOneSample(voice, parameters);
     return !voice.isActive() && voice.normalizationPowerWeight() == 0.0f;
 }
 

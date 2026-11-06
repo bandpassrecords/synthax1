@@ -57,7 +57,19 @@ private:
     void markVoiceActive(int voiceIndex) noexcept;
     void removeActiveVoiceAt(int activeListIndex) noexcept;
 
+    // One block of one voice's output, kept until the voices are mixed.
+    struct VoiceLanes
+    {
+        std::array<float, renderBlockMaxSamples> left {};
+        std::array<float, renderBlockMaxSamples> right {};
+        std::array<float, renderBlockMaxSamples> weight {};
+        std::array<float, renderBlockMaxSamples> phaserCenterOffsetHz {};
+        int endSample = 0; // as Voice::renderBlock returns it; -1 if the voice was idle
+    };
+
     std::vector<Voice> voices;
+    std::vector<VoiceLanes> voiceLanes;
+    VoiceModPlan modPlan;
     std::array<int, maxVoiceSlots> activeVoiceIndices {};
     int activeVoiceSlotCount = 0;
     std::array<std::uint64_t, maxVoiceSlots> voiceTriggerOrders {};

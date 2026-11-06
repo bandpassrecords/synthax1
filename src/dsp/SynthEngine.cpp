@@ -471,21 +471,53 @@ RenderStats SynthEngine::process(float* left, float* right, int numSamples) noex
         stats.peak = std::max(stats.peak, std::max(std::abs(l), std::abs(r)));
     };
 
+    float blockLeft[renderBlockMaxSamples];
+    float blockRight[renderBlockMaxSamples];
+    float phaserCenterOffsetsHz[renderBlockMaxSamples];
     if (parameters.arp.enabled)
     {
-        // Arp events fire per sample, so the arp path keeps the per-sample loop.
-        for (int i = 0; i < stats.samplesRendered; ++i)
+        // The arp clock runs ahead of the voices (it reads no voice state); the voices render in
+        // blocks that end where the arp plays or releases a note or changes its step velocity.
+        const auto quiet = [](const ArpGeneratedEvent& event) noexcept {
+            return !event.noteOn && !event.noteOff && event.noteOnCount <= 0 && event.noteOffCount <= 0;
+        };
+        ArpGeneratedEvent pending;
+        auto pendingVelocity = 0.0f;
+        auto hasPending = false;
+        for (int start = 0; start < stats.samplesRendered;)
         {
-            processArpEvent(arpeggiator.processSample(parameters, sampleRate));
-            parameters.performance.stepVelocity = arpeggiator.getStepVelocity();
-            emitSample(i, voices.renderSample(parameters));
+            if (hasPending)
+            {
+                processArpEvent(pending);
+                parameters.performance.stepVelocity = pendingVelocity;
+                hasPending = false;
+            }
+            else
+            {
+                processArpEvent(arpeggiator.processSample(parameters, sampleRate));
+                parameters.performance.stepVelocity = arpeggiator.getStepVelocity();
+            }
+            auto end = start + 1;
+            while (end < stats.samplesRendered && end - start < renderBlockMaxSamples)
+            {
+                pending = arpeggiator.processSample(parameters, sampleRate);
+                pendingVelocity = arpeggiator.getStepVelocity();
+                if (!quiet(pending) || pendingVelocity != parameters.performance.stepVelocity)
+                {
+                    hasPending = true;
+                    break;
+                }
+                ++end;
+            }
+            const auto blockSamples = end - start;
+            voices.renderBlock(parameters, blockLeft, blockRight, blockSamples, phaserCenterOffsetsHz);
+            for (int i = 0; i < blockSamples; ++i)
+                emitSample(start + i, StereoFrame { blockLeft[i], blockRight[i], phaserCenterOffsetsHz[i] });
+            start = end;
         }
     }
     else
     {
-        float blockLeft[renderBlockMaxSamples];
-        float blockRight[renderBlockMaxSamples];
-        float phaserCenterOffsetsHz[renderBlockMaxSamples];
         for (int start = 0; start < stats.samplesRendered; start += renderBlockMaxSamples)
         {
             const auto blockSamples = std::min(renderBlockMaxSamples, stats.samplesRendered - start);

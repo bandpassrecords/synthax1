@@ -23,6 +23,12 @@ public:
     float processPrepared(float input, float midiNote, const FilterParameters& parameters,
                           float cutoffModSemitones) noexcept;
 
+    // Filters the left and right channels of a part through two filters prepared with the same
+    // settings: exactly processPrepared on each, with the right filter taking the left's cutoff.
+    static void processPreparedPair(Filter& left, Filter& right, float& leftSample, float& rightSample,
+                                    float midiNote, const FilterParameters& parameters,
+                                    float cutoffModSemitones) noexcept;
+
     static float cutoffSemitonesToHz(float semitones) noexcept;
 
     // Reuses the cutoff-dependent coefficient another filter just computed for the same cutoff
@@ -37,7 +43,12 @@ public:
     }
 
 private:
+    void updatePreparedCutoff(float midiNote, const FilterParameters& parameters, float cutoffModSemitones) noexcept;
+    float ladderInputFor(float input, float coefficient, float feedback, float driveGain) const noexcept;
+    void runStage(int index, float& x, float coefficient) noexcept;
     void processStages(float input, float coefficient, float feedback, float driveGain) noexcept;
+    static void processStagesPair(Filter& left, Filter& right, float leftInput, float rightInput) noexcept;
+    float tapOutput(float input, FilterMode mode) const noexcept;
     float processCoreL4(float input, float coefficient, float feedback, float driveGain) noexcept;
     float processCore(float input, float coefficient, float feedback, float driveGain,
                       FilterMode mode) noexcept;

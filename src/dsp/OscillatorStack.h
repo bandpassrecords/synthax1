@@ -30,6 +30,14 @@ public:
     };
     StereoSample renderNative(float midiNote, const LayerOscillatorParameters& parameters,
                               float pitchModSemitones, float phaseModDegrees) noexcept;
+    // renderNative over a block, with the per-sample inputs as arrays: level, pan and detune replace the
+    // fields of `parameters`. Writes (does not add) each sample's output; the result matches renderNative
+    // called sample by sample exactly. When pan and detune hold still over the block, each unison voice
+    // runs through the whole block in turn.
+    void renderNativeBlock(const float* midiNote, const LayerOscillatorParameters& parameters,
+                           const float* pitchModSemitones, const float* level, const float* pan,
+                           const float* detune, const float* phaseModDegrees, bool panAndDetuneConstant,
+                           int numSamples, float* left, float* right) noexcept;
     void resetNativePhase(float normalizedPhase) noexcept;
 
     static float detuneOffsetCents(int index, int count, float detune) noexcept;
@@ -41,10 +49,14 @@ private:
     float renderPulse(float& phase, float phaseIncrement, float pulseWidth) noexcept;
     float renderSub(float phase, SubWave wave, float pulseWidth) const noexcept;
     float renderNoise() noexcept;
+    template <OscillatorSlotWaveform waveform>
+    float nativeWave(float phase, float increment) noexcept;
+    float nativeWaveValue(OscillatorSlotWaveform waveform, float phase, float increment) noexcept;
     float advancePhase(float& phase, float increment) noexcept;
     static float polyBlep(float phase, float phaseIncrement) noexcept;
     void resetState(float basePhase) noexcept;
     void updateDetuneRatios(int stackCount, float stackDetune) noexcept;
+    void updateNativePan(int count, float pan, float spread) noexcept;
     void updateDetunedIncrements(int stackCount, float masterIncrement,
                                  float minIncrement, float maxIncrement) noexcept;
 

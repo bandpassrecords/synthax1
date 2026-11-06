@@ -69,7 +69,8 @@ LfoShape toLfoShape(LfoShapeChoice choice) noexcept
 } // namespace
 
 VoiceAllocator::VoiceAllocator(int maxVoices)
-    : voices(static_cast<std::size_t>(std::clamp(maxVoices, 1, maxVoiceSlots)))
+    : voices(static_cast<std::size_t>(std::clamp(maxVoices, 1, maxVoiceSlots))),
+      voiceLanes(voices.size())
 {
 }
 
@@ -317,75 +318,8 @@ void VoiceAllocator::advanceIdleModulators(int numSamples, const SynthParameters
 
 StereoFrame VoiceAllocator::renderSample(const SynthParameters& parameters) noexcept
 {
-    const auto useMonoLfo = parameters.lfo.free || parameters.lfo.mono
-        || parameters.lfo.gateMode == LfoGateMode::Mono
-        || parameters.lfo.gateMode == LfoGateMode::Song;
-    LfoFrame monoValue;
-    LfoFrame monoValue2;
-    const auto useMonoLfo2 = (parameters.lfo2.free || parameters.lfo2.mono
-                              || parameters.lfo2.gateMode == LfoGateMode::Mono || parameters.lfo2.gateMode == LfoGateMode::Song);
-    if (useMonoLfo2)
-    {
-        syncSecondMonoLfoConfig(parameters);
-        monoValue2.value = monoLfo2.process();
-        monoValue2.phase = monoLfo2.getPhase();
-    }
-    if (useMonoLfo)
-    {
-        syncMonoLfoConfig(parameters);
-        monoValue.value = monoLfo.process();
-        monoValue.phase = monoLfo.getPhase();
-    }
-
     StereoFrame frame;
-    auto normalizationPower = 0.0f;
-    std::uint64_t selectedTriggerOrder = 0;
-    auto selectedUnisonIndex = maxVoiceSlots;
-    for (int activeIndex = 0; activeIndex < activeVoiceSlotCount;)
-    {
-        const auto voiceIndex = activeVoiceIndices[static_cast<std::size_t>(activeIndex)];
-        if (voiceIndex < 0 || voiceIndex >= static_cast<int>(voices.size()))
-        {
-            removeActiveVoiceAt(activeIndex);
-            continue;
-        }
-
-        auto& voice = voices[static_cast<std::size_t>(voiceIndex)];
-        if (!voice.isActive())
-        {
-            removeActiveVoiceAt(activeIndex);
-            continue;
-        }
-
-        normalizationPower += voice.isStopFading() ? voice.normalizationPowerWeight() : 1.0f;
-        const auto voiceFrame = voice.renderSample(parameters, useMonoLfo ? &monoValue : nullptr, useMonoLfo2 ? &monoValue2 : nullptr);
-        frame.left += voiceFrame.left;
-        frame.right += voiceFrame.right;
-
-        if (!voice.isActive())
-        {
-            removeActiveVoiceAt(activeIndex);
-            continue;
-        }
-
-        const auto triggerOrder = voiceTriggerOrders[static_cast<std::size_t>(voiceIndex)];
-        if (triggerOrder > selectedTriggerOrder
-            || (triggerOrder == selectedTriggerOrder && voice.getUnisonIndex() < selectedUnisonIndex))
-        {
-            selectedTriggerOrder = triggerOrder;
-            selectedUnisonIndex = voice.getUnisonIndex();
-            frame.phaserCenterOffsetHz = voiceFrame.phaserCenterOffsetHz;
-        }
-        ++activeIndex;
-    }
-
-    if (normalizationPower > 1.0f)
-    {
-        const auto compensation = inverseSqrtForWeight(normalizationPower);
-        frame.left *= compensation;
-        frame.right *= compensation;
-    }
-
+    renderBlock(parameters, &frame.left, &frame.right, 1, &frame.phaserCenterOffsetHz);
     return frame;
 }
 
@@ -396,12 +330,156 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
     if (numSamples <= 0)
         return;
 
-    for (int index = 0; index < numSamples; ++index)
+    const auto useMonoLfo = parameters.lfo.free || parameters.lfo.mono
+        || parameters.lfo.gateMode == LfoGateMode::Mono
+        || parameters.lfo.gateMode == LfoGateMode::Song;
+    const auto useMonoLfo2 = (parameters.lfo2.free || parameters.lfo2.mono
+                              || parameters.lfo2.gateMode == LfoGateMode::Mono || parameters.lfo2.gateMode == LfoGateMode::Song);
+    std::array<LfoFrame, renderBlockMaxSamples> monoValues;
+    std::array<LfoFrame, renderBlockMaxSamples> monoValues2;
+    if (useMonoLfo2)
     {
-        const auto frame = renderSample(parameters);
-        outLeft[index] = frame.left;
-        outRight[index] = frame.right;
-        if (phaserCenterOffsetsHz != nullptr) phaserCenterOffsetsHz[index] = frame.phaserCenterOffsetHz;
+        syncSecondMonoLfoConfig(parameters);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            monoValues2[static_cast<std::size_t>(i)].value = monoLfo2.process();
+            monoValues2[static_cast<std::size_t>(i)].phase = monoLfo2.getPhase();
+        }
+    }
+    if (useMonoLfo)
+    {
+        syncMonoLfoConfig(parameters);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            monoValues[static_cast<std::size_t>(i)].value = monoLfo.process();
+            monoValues[static_cast<std::size_t>(i)].phase = monoLfo.getPhase();
+        }
+    }
+
+    // Each voice renders the block into its own lanes; voices don't affect each other.
+    modPlan.build(parameters.transMod);
+    auto anyVoiceEnds = false;
+    for (int activeIndex = 0; activeIndex < activeVoiceSlotCount; ++activeIndex)
+    {
+        const auto voiceIndex = activeVoiceIndices[static_cast<std::size_t>(activeIndex)];
+        if (voiceIndex < 0 || voiceIndex >= static_cast<int>(voices.size()))
+        {
+            anyVoiceEnds = true;
+            continue;
+        }
+        auto& voice = voices[static_cast<std::size_t>(voiceIndex)];
+        auto& lanes = voiceLanes[static_cast<std::size_t>(voiceIndex)];
+        if (!voice.isActive())
+        {
+            lanes.endSample = -1;
+            anyVoiceEnds = true;
+            continue;
+        }
+        lanes.endSample = voice.renderBlock(parameters, modPlan, useMonoLfo ? monoValues.data() : nullptr,
+                                            useMonoLfo2 ? monoValues2.data() : nullptr, numSamples,
+                                            { lanes.left.data(), lanes.right.data(), lanes.weight.data(),
+                                              lanes.phaserCenterOffsetHz.data() });
+        anyVoiceEnds = anyVoiceEnds || lanes.endSample < numSamples;
+    }
+
+    // Mix the lanes sample by sample in the active-list order, removing a voice where it ends, so the
+    // sums (and the list) come out exactly as when every voice rendered one sample at a time.
+    const auto mixSample = [this, outLeft, outRight, phaserCenterOffsetsHz](int i) noexcept {
+        const auto sample = static_cast<std::size_t>(i);
+        StereoFrame frame;
+        auto normalizationPower = 0.0f;
+        std::uint64_t selectedTriggerOrder = 0;
+        auto selectedUnisonIndex = maxVoiceSlots;
+        for (int activeIndex = 0; activeIndex < activeVoiceSlotCount;)
+        {
+            const auto voiceIndex = activeVoiceIndices[static_cast<std::size_t>(activeIndex)];
+            if (voiceIndex < 0 || voiceIndex >= static_cast<int>(voices.size()))
+            {
+                removeActiveVoiceAt(activeIndex);
+                continue;
+            }
+            const auto& lanes = voiceLanes[static_cast<std::size_t>(voiceIndex)];
+            if (lanes.endSample < i)
+            {
+                removeActiveVoiceAt(activeIndex);
+                continue;
+            }
+            normalizationPower += lanes.weight[sample];
+            frame.left += lanes.left[sample];
+            frame.right += lanes.right[sample];
+            if (lanes.endSample == i)
+            {
+                removeActiveVoiceAt(activeIndex);
+                continue;
+            }
+            const auto triggerOrder = voiceTriggerOrders[static_cast<std::size_t>(voiceIndex)];
+            const auto unisonIndex = voices[static_cast<std::size_t>(voiceIndex)].getUnisonIndex();
+            if (triggerOrder > selectedTriggerOrder
+                || (triggerOrder == selectedTriggerOrder && unisonIndex < selectedUnisonIndex))
+            {
+                selectedTriggerOrder = triggerOrder;
+                selectedUnisonIndex = unisonIndex;
+                frame.phaserCenterOffsetHz = lanes.phaserCenterOffsetHz[sample];
+            }
+            ++activeIndex;
+        }
+        if (normalizationPower > 1.0f)
+        {
+            const auto compensation = inverseSqrtForWeight(normalizationPower);
+            frame.left *= compensation;
+            frame.right *= compensation;
+        }
+        outLeft[i] = frame.left;
+        outRight[i] = frame.right;
+        if (phaserCenterOffsetsHz != nullptr) phaserCenterOffsetsHz[i] = frame.phaserCenterOffsetHz;
+    };
+    if (anyVoiceEnds)
+    {
+        for (int i = 0; i < numSamples; ++i)
+            mixSample(i);
+        return;
+    }
+
+    // No voice ends in this block: the list order holds, so each voice adds its whole lane in turn
+    // (the same additions in the same order), and the phaser follows one voice throughout.
+    std::array<float, renderBlockMaxSamples> power {};
+    std::fill(outLeft, outLeft + numSamples, 0.0f);
+    std::fill(outRight, outRight + numSamples, 0.0f);
+    std::uint64_t selectedTriggerOrder = 0;
+    auto selectedUnisonIndex = maxVoiceSlots;
+    const VoiceLanes* selected = nullptr;
+    for (int activeIndex = 0; activeIndex < activeVoiceSlotCount; ++activeIndex)
+    {
+        const auto voiceIndex = activeVoiceIndices[static_cast<std::size_t>(activeIndex)];
+        const auto& lanes = voiceLanes[static_cast<std::size_t>(voiceIndex)];
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const auto sample = static_cast<std::size_t>(i);
+            power[sample] += lanes.weight[sample];
+            outLeft[i] += lanes.left[sample];
+            outRight[i] += lanes.right[sample];
+        }
+        const auto triggerOrder = voiceTriggerOrders[static_cast<std::size_t>(voiceIndex)];
+        const auto unisonIndex = voices[static_cast<std::size_t>(voiceIndex)].getUnisonIndex();
+        if (triggerOrder > selectedTriggerOrder
+            || (triggerOrder == selectedTriggerOrder && unisonIndex < selectedUnisonIndex))
+        {
+            selectedTriggerOrder = triggerOrder;
+            selectedUnisonIndex = unisonIndex;
+            selected = &lanes;
+        }
+    }
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto sample = static_cast<std::size_t>(i);
+        if (power[sample] > 1.0f)
+        {
+            const auto compensation = inverseSqrtForWeight(power[sample]);
+            outLeft[i] *= compensation;
+            outRight[i] *= compensation;
+        }
+        if (phaserCenterOffsetsHz != nullptr)
+            phaserCenterOffsetsHz[i] = selected != nullptr ? selected->phaserCenterOffsetHz[sample] : 0.0f;
     }
 }
 

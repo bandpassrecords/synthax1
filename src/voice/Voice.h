@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 namespace synth
 {
@@ -59,6 +60,39 @@ struct StereoFrame
     float phaserCenterOffsetHz = 0.0f;
 };
 
+// The modulation slots that are on, and the destinations each one reaches, in slot order. Built
+// once per block and shared by every voice, so a voice skips the slots and destinations not in use.
+struct VoiceModPlan
+{
+    struct Route
+    {
+        int slot = 0;
+        bool legacyDepth = false; // the slot sets one of the legacy depths summed by evaluateTransMod
+        int destinationCount = 0;
+        std::array<std::uint8_t, nativeModDestinationCount> destinations {};
+        std::array<float, nativeModDestinationCount> depths {};
+    };
+
+    std::array<Route, transModSlotCount> routes {};
+    int routeCount = 0;
+    bool anyLegacyDepth = false;
+    std::array<bool, nativeModDestinationCount> live {}; // reached by at least one route
+    std::array<std::uint8_t, nativeModDestinationCount> liveDestinations {};
+    int liveCount = 0;
+
+    void build(const TransModParameters& transMod) noexcept;
+};
+
+// Where a voice writes one block: its output, its weight in the output normalisation (taken before
+// each sample) and its phaser offset, one value per sample it renders.
+struct VoiceBlockOutput
+{
+    float* left = nullptr;
+    float* right = nullptr;
+    float* weight = nullptr;
+    float* phaserCenterOffsetHz = nullptr;
+};
+
 class Voice
 {
 public:
@@ -73,8 +107,13 @@ public:
     void reset() noexcept;
     void process(int numSamples) noexcept;
     void syncModulators(const SynthParameters& parameters) noexcept;
-    StereoFrame renderSample(const SynthParameters& parameters, const LfoFrame* monoLfoValue = nullptr,
-                             const LfoFrame* monoLfo2Value = nullptr) noexcept;
+    // Renders up to renderBlockMaxSamples, sample by sample for the modulation and then module by
+    // module for the oscillators and filters; the result is the same as rendering one sample at a
+    // time. The mono LFO arrays hold one frame per sample, or are null when the LFO is per voice.
+    // Returns the sample at which the voice ended (it is written, and the voice is idle after it),
+    // or numSamples if the voice is still playing.
+    int renderBlock(const SynthParameters& parameters, const VoiceModPlan& plan, const LfoFrame* monoLfoValues,
+                    const LfoFrame* monoLfo2Values, int numSamples, const VoiceBlockOutput& output) noexcept;
     bool isActive() const noexcept { return state != VoiceState::Idle; }
     bool isHeld() const noexcept { return state == VoiceState::Held; }
     bool isStopFading() const noexcept { return stopFadeSamples > 0 && stopFadeTotalSamples > 0; }
@@ -93,9 +132,6 @@ private:
         float pan = 0.0f;
     };
 
-    StereoFrame renderNative(const SynthParameters& parameters, const LfoFrame* monoLfoValue,
-                             const LfoFrame* monoLfo2Value) noexcept;
-
     float processGlide(const SynthParameters& parameters) noexcept;
     float processVelocityGlide(const SynthParameters& parameters) noexcept;
     void syncModulatorConfig(const SynthParameters& parameters) noexcept;
@@ -103,9 +139,8 @@ private:
     float evalModSource(const SynthParameters& parameters, ModSource source, float lfoValue, float rampValue,
                         float modEnvValue, float ampEnvValue, float effectiveNote,
                         float velocityGlideValue) const noexcept;
-    ModulationSums evaluateTransMod(const SynthParameters& parameters, float lfoValue,
-                                    float rampValue, float modEnvValue, float ampEnvValue,
-                                    float effectiveNote, float velocityGlideValue) const noexcept;
+    ModulationSums evaluateTransMod(const SynthParameters& parameters, const VoiceModPlan& plan,
+                                    const float* amounts, const bool* amountsFinite) const noexcept;
     VoiceState state = VoiceState::Idle;
     int midiNote = -1;
     float velocity = 0.0f;

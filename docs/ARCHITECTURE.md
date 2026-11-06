@@ -31,6 +31,8 @@ Two modulation envelopes, two LFOs, performance inputs, and miscellaneous source
 
 Global sync and LFO free-running behavior are evaluated live without accidental phase resets. Shared/free LFOs continue advancing while no voice sounds. The arpeggiator supports step/chord event batches in fixed storage. Note-off ownership must survive parameter changes and overlapping generated pitches.
 
+Voices render in blocks of up to 64 samples. Within a block, each voice first computes its modulation sample by sample, because the LFO rate, gain and offset destinations read the previous sample's modulation. Its oscillators and filters then run over the whole block, one module at a time, and the allocator mixes the voices sample by sample in active-list order. The result is identical, bit for bit, to rendering one sample at a time; the arpeggiator path splits blocks at its events. Keep that equality when changing this code, and check it by rendering the parity sets in `research/parity` before and after.
+
 Source-owned DSP implements documented control behavior. Matching original algorithms, phase response, and timbre is a separate reference-measurement obligation; this architecture description does not establish audio equivalence.
 
 ## Realtime boundary

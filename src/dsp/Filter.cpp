@@ -9,6 +9,8 @@ namespace
 {
 #if defined(__clang__) || defined(__GNUC__)
 #define SYNTHAX1_ALWAYS_INLINE inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define SYNTHAX1_ALWAYS_INLINE __forceinline
 #else
 #define SYNTHAX1_ALWAYS_INLINE inline
 #endif
@@ -92,7 +94,7 @@ const std::array<float, ladderTableSize + 2> ladderTable = [] {
     return table;
 }();
 
-float ladderCoefficient(float cutoffHz, float sampleRate) noexcept
+SYNTHAX1_ALWAYS_INLINE float ladderCoefficient(float cutoffHz, float sampleRate) noexcept
 {
     const auto position = std::clamp(cutoffHz / sampleRate, 0.0f, 0.4999f) * (2.0f * ladderTableSize);
     const auto index = static_cast<std::size_t>(position);
@@ -299,12 +301,9 @@ float Filter::processPrepared(float input, float midiNote, const SynthParameters
     return processPrepared(input, midiNote, parameters.filter, cutoffModSemitones);
 }
 
-float Filter::processPrepared(float input, float midiNote, const FilterParameters& parameters,
-                              float cutoffModSemitones) noexcept
+SYNTHAX1_ALWAYS_INLINE void Filter::updatePreparedCutoff(float midiNote, const FilterParameters& parameters,
+                                                         float cutoffModSemitones) noexcept
 {
-    if (!preparedEnabled)
-        return input;
-
     const auto keytrackSemitones = (midiNote - keytrackReferenceNote) * preparedKeytrack;
     const auto cutoffSemitones = clampKnownFinite(parameters.cutoffSemitones + keytrackSemitones
                                                       + cutoffModSemitones,
@@ -324,7 +323,15 @@ float Filter::processPrepared(float input, float midiNote, const FilterParameter
         cachedEffectiveSampleRate = preparedEffectiveSampleRate;
         cachedCoefficientMode = static_cast<int>(preparedMode);
     }
+}
 
+float Filter::processPrepared(float input, float midiNote, const FilterParameters& parameters,
+                              float cutoffModSemitones) noexcept
+{
+    if (!preparedEnabled)
+        return input;
+
+    updatePreparedCutoff(midiNote, parameters, cutoffModSemitones);
     if (preparedOversampling <= 1)
     {
         previousInput = input;
@@ -347,6 +354,51 @@ float Filter::processPrepared(float input, float midiNote, const FilterParameter
     value /= static_cast<float>(preparedOversampling);
 
     return std::isfinite(value) ? value : 0.0f;
+}
+
+void Filter::processPreparedPair(Filter& left, Filter& right, float& leftSample, float& rightSample, float midiNote,
+                                 const FilterParameters& parameters, float cutoffModSemitones) noexcept
+{
+    if (!left.preparedEnabled)
+        return;
+
+    left.updatePreparedCutoff(midiNote, parameters, cutoffModSemitones);
+    right.shareCutoffFrom(left);
+    const auto mode = left.preparedMode;
+    const auto useL4 = left.preparedUseL4;
+    const auto oversampling = left.preparedOversampling;
+    const auto output = [mode, useL4](const Filter& filter, float input) noexcept {
+        return useL4 ? filter.clippedStage[3] : filter.tapOutput(input, mode);
+    };
+    if (oversampling <= 1)
+    {
+        left.previousInput = leftSample;
+        right.previousInput = rightSample;
+        processStagesPair(left, right, leftSample, rightSample);
+        const auto leftValue = output(left, leftSample);
+        const auto rightValue = output(right, rightSample);
+        leftSample = std::isfinite(leftValue) ? leftValue : 0.0f;
+        rightSample = std::isfinite(rightValue) ? rightValue : 0.0f;
+        return;
+    }
+
+    auto leftValue = 0.0f;
+    auto rightValue = 0.0f;
+    for (int i = 0; i < oversampling; ++i)
+    {
+        const auto t = static_cast<float>(i + 1) / static_cast<float>(oversampling);
+        const auto leftInput = left.previousInput + (leftSample - left.previousInput) * t;
+        const auto rightInput = right.previousInput + (rightSample - right.previousInput) * t;
+        processStagesPair(left, right, leftInput, rightInput);
+        leftValue += output(left, leftInput);
+        rightValue += output(right, rightInput);
+    }
+    left.previousInput = leftSample;
+    right.previousInput = rightSample;
+    leftValue /= static_cast<float>(oversampling);
+    rightValue /= static_cast<float>(oversampling);
+    leftSample = std::isfinite(leftValue) ? leftValue : 0.0f;
+    rightSample = std::isfinite(rightValue) ? rightValue : 0.0f;
 }
 
 // Block variant: identical per-sample calls so results stay bit-exact with the
@@ -372,7 +424,7 @@ float Filter::cutoffSemitonesToHz(float semitones) noexcept
 // The ladder output is then y4 = G^4 u + sigma, with sigma from the current states, and the
 // feedback equation u = in - k y4 is solved for u before the stages run. The input
 // saturation keeps self-oscillation bounded.
-void Filter::processStages(float input, float coefficient, float feedback, float driveGain) noexcept
+SYNTHAX1_ALWAYS_INLINE float Filter::ladderInputFor(float input, float coefficient, float feedback, float driveGain) const noexcept
 {
     const auto G = coefficient;
     const auto hold = 1.0f - G; // 1 / (1 + g)
@@ -383,16 +435,39 @@ void Filter::processStages(float input, float coefficient, float feedback, float
     // A wide safety limit keeps self-oscillation bounded; the drive knee shapes the rest.
     const auto relative = linear / cachedDriveLimit;
     const auto relativeSquared = relative * relative;
-    ladderInput = 5.0f * fastTanh(linear * 0.2f) / (1.0f + relativeSquared * relativeSquared);
+    return 5.0f * fastTanh(linear * 0.2f) / (1.0f + relativeSquared * relativeSquared);
+}
 
+SYNTHAX1_ALWAYS_INLINE void Filter::runStage(int index, float& x, float coefficient) noexcept
+{
+    const auto i = static_cast<std::size_t>(index);
+    const auto v = (x - stage[i]) * coefficient;
+    const auto y = v + stage[i];
+    stage[i] = flushTiny(y + v);
+    clippedStage[i] = y;
+    x = y;
+}
+
+void Filter::processStages(float input, float coefficient, float feedback, float driveGain) noexcept
+{
+    ladderInput = ladderInputFor(input, coefficient, feedback, driveGain);
     auto x = ladderInput;
     for (int i = 0; i < 4; ++i)
+        runStage(i, x, coefficient);
+}
+
+// The left and right ladders of a part side by side: each channel's arithmetic is exactly
+// processStages', and interleaving the two lets their long dependency chains overlap.
+SYNTHAX1_ALWAYS_INLINE void Filter::processStagesPair(Filter& left, Filter& right, float leftInput, float rightInput) noexcept
+{
+    left.ladderInput = left.ladderInputFor(leftInput, left.cachedCoefficient, left.cachedFeedback, left.cachedDriveGain);
+    right.ladderInput = right.ladderInputFor(rightInput, right.cachedCoefficient, right.cachedFeedback, right.cachedDriveGain);
+    auto leftX = left.ladderInput;
+    auto rightX = right.ladderInput;
+    for (int i = 0; i < 4; ++i)
     {
-        const auto v = (x - stage[i]) * G;
-        const auto y = v + stage[i];
-        stage[i] = flushTiny(y + v);
-        clippedStage[i] = y;
-        x = y;
+        left.runStage(i, leftX, left.cachedCoefficient);
+        right.runStage(i, rightX, right.cachedCoefficient);
     }
 }
 
@@ -409,6 +484,11 @@ SYNTHAX1_ALWAYS_INLINE float Filter::processCore(float input, float coefficient,
                                                 FilterMode mode) noexcept
 {
     processStages(input, coefficient, feedback, driveGain);
+    return tapOutput(input, mode);
+}
+
+SYNTHAX1_ALWAYS_INLINE float Filter::tapOutput(float input, FilterMode mode) const noexcept
+{
     const auto& y = clippedStage;
     const auto u = ladderInput;
 

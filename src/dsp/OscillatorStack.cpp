@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <type_traits>
 
 namespace synth
 {
@@ -12,6 +13,8 @@ constexpr float pi = 3.14159265358979323846f;
 
 #if defined(__clang__) || defined(__GNUC__)
 #define SYNTHAX1_ALWAYS_INLINE inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define SYNTHAX1_ALWAYS_INLINE __forceinline
 #else
 #define SYNTHAX1_ALWAYS_INLINE inline
 #endif
@@ -104,6 +107,115 @@ void OscillatorStack::resetNativePhase(float normalizedPhase) noexcept
     phases.fill(wrapUnit(std::isfinite(normalizedPhase) ? normalizedPhase : 0.0f));
 }
 
+namespace
+{
+// The native triangle: a rising and falling ramp with its two corners smoothed over one sample
+// period, so the edges alias less.
+SYNTHAX1_ALWAYS_INLINE float nativeTriangle(float position, float increment) noexcept
+{
+    const auto correction = [increment](float value) noexcept {
+        if (value >= 1.0f) value -= 1.0f;
+        const auto distance = std::min(value, 1.0f - value);
+        if (distance >= increment)
+            return 0.0f;
+        const auto remainder = 1.0f - distance / increment;
+        return increment * remainder * remainder * remainder / 3.0f;
+    };
+    return 1.0f - 4.0f * std::abs(position - 0.5f)
+        + 4.0f * correction(position) - 4.0f * correction(position + 0.5f);
+}
+
+// MEASURED (the reference synth 3.0.7.3, sweeps/unison): n coherent voices add up to an amplitude of
+// 0.8 + 0.2 n, so each voice carries (0.8 + 0.2 n) / n.
+SYNTHAX1_ALWAYS_INLINE float nativeVoiceGain(float level, int count) noexcept
+{
+    return 0.7f * clampFast(level, 0.0f, 4.0f)
+         * (0.8f + 0.2f * static_cast<float>(count)) / static_cast<float>(count);
+}
+} // namespace
+
+// One native waveform value at `phase`, before the waveform's start shift.
+template <OscillatorSlotWaveform waveform>
+SYNTHAX1_ALWAYS_INLINE float OscillatorStack::nativeWave(float phase, float increment) noexcept
+{
+    // MEASURED (the reference synth 3.0.7.3, sweeps/startwave): where each waveform starts when a voice retriggers
+    // at Phase 0, as a shift of the cycle (saw half a cycle, triangle a quarter, trisaw 0.09). The
+    // pulse waves start inverted. Only matters when oscillators are layered with Retrig on.
+    if constexpr (waveform == OscillatorSlotWaveform::Saw)
+    {
+        phase = wrapUnit(phase + 0.5f);
+        return renderSaw(phase, increment);
+    }
+    else if constexpr (waveform == OscillatorSlotWaveform::Pulse)
+        return -renderPulse(phase, increment, 0.5f);
+    else if constexpr (waveform == OscillatorSlotWaveform::HalfPulse)
+        return -(renderPulse(phase, increment, 0.25f) + 0.5f);
+    else if constexpr (waveform == OscillatorSlotWaveform::QuarterPulse)
+        return -(renderPulse(phase, increment, 0.125f) + 0.75f);
+    // MEASURED (the reference synth 3.0.7.3): its noise oscillator is 10.2 dB above the same-level saw,
+    // white and identical in both channels.
+    else if constexpr (waveform == OscillatorSlotWaveform::Noise)
+        return renderNoise() * 3.24f;
+    else if constexpr (waveform == OscillatorSlotWaveform::Sine)
+        return std::sin(2.0f * pi * phase);
+    else if constexpr (waveform == OscillatorSlotWaveform::Triangle)
+        return nativeTriangle(wrapUnit(phase + 0.25f), increment);
+    else
+    {
+        // MEASURED (the reference synth 3.0.7.3, sweeps/wavespec): odd harmonics only, falling as 0.85/n after a
+        // stronger fundamental, which is a square wave plus a little sine; level matched to the
+        // fundamental of the reference synth's render.
+        phase = wrapUnit(phase + 0.09f);
+        return 0.496f * renderPulse(phase, increment, 0.5f) + 0.110f * std::sin(2.0f * pi * phase);
+    }
+}
+
+float OscillatorStack::nativeWaveValue(OscillatorSlotWaveform waveform, float phase, float increment) noexcept
+{
+    using Waveform = OscillatorSlotWaveform;
+    switch (waveform)
+    {
+        case Waveform::Saw: return nativeWave<Waveform::Saw>(phase, increment);
+        case Waveform::Pulse: return nativeWave<Waveform::Pulse>(phase, increment);
+        case Waveform::HalfPulse: return nativeWave<Waveform::HalfPulse>(phase, increment);
+        case Waveform::QuarterPulse: return nativeWave<Waveform::QuarterPulse>(phase, increment);
+        case Waveform::Noise: return nativeWave<Waveform::Noise>(phase, increment);
+        case Waveform::Sine: return nativeWave<Waveform::Sine>(phase, increment);
+        case Waveform::Triangle: return nativeWave<Waveform::Triangle>(phase, increment);
+        case Waveform::SawTriangle: return nativeWave<Waveform::SawTriangle>(phase, increment);
+    }
+    return 0.0f;
+}
+
+void OscillatorStack::updateNativePan(int count, float pan, float spread) noexcept
+{
+    if (cachedNativePanCount == count && cachedNativePan == pan && cachedNativeStereo == spread)
+        return;
+
+    cachedNativePanCount = count;
+    cachedNativePan = pan;
+    cachedNativeStereo = spread;
+    // MEASURED (the reference synth 3.0.7.3, sweeps/unipan, voice counts 2-8): each unison voice is panned hard to
+    // one side by the amount of the Stereo knob, not spread smoothly. Mirror voices (about the
+    // centre) take opposite sides; the outside-in side sequence is L R R L (Thue-Morse) for an even
+    // count and L R L for an odd one, and the middle voice of an odd count stays centred. The gains
+    // are linear: left a(1 - p), right a(1 + p) for a voice at pan p, with a the centred level.
+    for (int index = 0; index < count; ++index)
+    {
+        const auto mirrored = count - 1 - index;
+        const auto outside = std::min(index, mirrored);
+        const auto onLeft = (count % 2 == 0 ? (std::popcount(static_cast<unsigned>(outside)) & 1) == 0
+                                            : (outside & 1) == 0)
+                                == (index <= mirrored);
+        const auto voicePan = index == mirrored ? 0.0f : (onLeft ? -spread : spread);
+        const auto angle = (clampFast(pan, -1.0f, 1.0f) + 1.0f) * pi * 0.25f;
+        const auto baseLeft = pan >= 1.0f ? 0.0f : std::cos(angle);
+        const auto baseRight = pan <= -1.0f ? 0.0f : std::sin(angle);
+        nativePanLeft[static_cast<std::size_t>(index)] = baseLeft * (1.0f - voicePan);
+        nativePanRight[static_cast<std::size_t>(index)] = baseRight * (1.0f + voicePan);
+    }
+}
+
 OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
                                                             const LayerOscillatorParameters& parameters, float pitchModSemitones, float phaseModDegrees) noexcept
 {
@@ -121,86 +233,17 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
         cachedNativeFrequency = clampFast(midiNoteToHz(note), 1.0f, rate * 0.45f);
     }
     const auto frequency = cachedNativeFrequency;
-    const auto detune = clampUnitFast(parameters.detune);
-    updateDetuneRatios(count, detune);
-    // MEASURED (the reference synth 3.0.7.3, sweeps/unison): n coherent voices add up to an amplitude of
-    // 0.8 + 0.2 n, so each voice carries (0.8 + 0.2 n) / n.
-    const auto gain = 0.7f * clampFast(parameters.level, 0.0f, 4.0f)
-                    * (0.8f + 0.2f * static_cast<float>(count)) / static_cast<float>(count);
-    const auto spread = clampUnitFast(parameters.stereo);
+    updateDetuneRatios(count, clampUnitFast(parameters.detune));
+    const auto gain = nativeVoiceGain(parameters.level, count);
     const auto phaseOffset = clampFast(phaseModDegrees, -720.0f, 720.0f) / 360.0f;
-    if (cachedNativePanCount != count || cachedNativePan != parameters.pan || cachedNativeStereo != spread)
-    {
-        cachedNativePanCount = count;
-        cachedNativePan = parameters.pan;
-        cachedNativeStereo = spread;
-        // MEASURED (the reference synth 3.0.7.3, sweeps/unipan, voice counts 2-8): each unison voice is panned hard to
-        // one side by the amount of the Stereo knob, not spread smoothly. Mirror voices (about the
-        // centre) take opposite sides; the outside-in side sequence is L R R L (Thue-Morse) for an even
-        // count and L R L for an odd one, and the middle voice of an odd count stays centred. The gains
-        // are linear: left a(1 - p), right a(1 + p) for a voice at pan p, with a the centred level.
-        for (int index = 0; index < count; ++index)
-        {
-            const auto mirrored = count - 1 - index;
-            const auto outside = std::min(index, mirrored);
-            const auto onLeft = (count % 2 == 0 ? (std::popcount(static_cast<unsigned>(outside)) & 1) == 0
-                                                : (outside & 1) == 0)
-                                    == (index <= mirrored);
-            const auto voicePan = index == mirrored ? 0.0f : (onLeft ? -spread : spread);
-            const auto angle = (clampFast(parameters.pan, -1.0f, 1.0f) + 1.0f) * pi * 0.25f;
-            const auto baseLeft = parameters.pan >= 1.0f ? 0.0f : std::cos(angle);
-            const auto baseRight = parameters.pan <= -1.0f ? 0.0f : std::sin(angle);
-            nativePanLeft[static_cast<std::size_t>(index)] = baseLeft * (1.0f - voicePan);
-            nativePanRight[static_cast<std::size_t>(index)] = baseRight * (1.0f + voicePan);
-        }
-    }
+    updateNativePan(count, parameters.pan, clampUnitFast(parameters.stereo));
     for (int index = 0; index < count; ++index)
     {
         auto& storedPhase = phases[static_cast<std::size_t>(index)];
-        auto phase = phaseOffset == 0.0f ? storedPhase : wrapUnit(storedPhase + phaseOffset);
+        const auto phase = phaseOffset == 0.0f ? storedPhase : wrapUnit(storedPhase + phaseOffset);
         const auto increment = clampFast(frequency / rate * detuneRatios[static_cast<std::size_t>(index)],
                                          1.0f / rate, 0.45f);
-        const auto triangle = [increment](float position) noexcept {
-            const auto correction = [increment](float value) noexcept {
-                if (value >= 1.0f) value -= 1.0f;
-                const auto distance = std::min(value, 1.0f - value);
-                if (distance >= increment)
-                    return 0.0f;
-                const auto remainder = 1.0f - distance / increment;
-                return increment * remainder * remainder * remainder / 3.0f;
-            };
-            return 1.0f - 4.0f * std::abs(position - 0.5f)
-                + 4.0f * correction(position) - 4.0f * correction(position + 0.5f);
-        };
-        auto value = 0.0f;
-        // MEASURED (the reference synth 3.0.7.3, sweeps/startwave): where each waveform starts when a voice retriggers
-        // at Phase 0, as a shift of the cycle (saw half a cycle, triangle a quarter, trisaw 0.09). The
-        // pulse waves start inverted. Only matters when oscillators are layered with Retrig on.
-        switch (parameters.waveform)
-        {
-            case OscillatorSlotWaveform::Saw: phase = wrapUnit(phase + 0.5f); break;
-            case OscillatorSlotWaveform::Triangle: phase = wrapUnit(phase + 0.25f); break;
-            case OscillatorSlotWaveform::SawTriangle: phase = wrapUnit(phase + 0.09f); break;
-            default: break;
-        }
-        switch (parameters.waveform)
-        {
-            case OscillatorSlotWaveform::Saw: value = renderSaw(phase, increment); break;
-            case OscillatorSlotWaveform::Pulse: value = -renderPulse(phase, increment, 0.5f); break;
-            case OscillatorSlotWaveform::HalfPulse: value = -(renderPulse(phase, increment, 0.25f) + 0.5f); break;
-            case OscillatorSlotWaveform::QuarterPulse: value = -(renderPulse(phase, increment, 0.125f) + 0.75f); break;
-            // MEASURED (the reference synth 3.0.7.3): its noise oscillator is 10.2 dB above the same-level saw,
-            // white and identical in both channels.
-            case OscillatorSlotWaveform::Noise: value = renderNoise() * 3.24f; break;
-            case OscillatorSlotWaveform::Sine: value = std::sin(2.0f * pi * phase); break;
-            case OscillatorSlotWaveform::Triangle: value = triangle(phase); break;
-            case OscillatorSlotWaveform::SawTriangle:
-                // MEASURED (the reference synth 3.0.7.3, sweeps/wavespec): odd harmonics only, falling as 0.85/n after a
-                // stronger fundamental, which is a square wave plus a little sine; level matched to the
-                // fundamental of the the reference synth render.
-                value = 0.496f * renderPulse(phase, increment, 0.5f) + 0.110f * std::sin(2.0f * pi * phase);
-                break;
-        }
+        const auto value = nativeWaveValue(parameters.waveform, phase, increment);
         advancePhase(storedPhase, increment);
         const auto sample = value * gain * (parameters.invert ? -1.0f : 1.0f);
         output.left += sample * nativePanLeft[static_cast<std::size_t>(index)];
@@ -209,6 +252,121 @@ OscillatorStack::StereoSample OscillatorStack::renderNative(float midiNote,
     output.left = std::isfinite(output.left) ? output.left : 0.0f;
     output.right = std::isfinite(output.right) ? output.right : 0.0f;
     return output;
+}
+
+void OscillatorStack::renderNativeBlock(const float* midiNote, const LayerOscillatorParameters& parameters,
+                                        const float* pitchModSemitones, const float* level, const float* pan,
+                                        const float* detune, const float* phaseModDegrees,
+                                        bool panAndDetuneConstant, int numSamples, float* left,
+                                        float* right) noexcept
+{
+    numSamples = clampIntFast(numSamples, 0, renderBlockMaxSamples);
+    const auto count = clampIntFast(parameters.voices, 0, maxStackCount);
+    if (count == 0)
+    {
+        std::fill(left, left + numSamples, 0.0f);
+        std::fill(right, right + numSamples, 0.0f);
+        return;
+    }
+
+    // A moving pan or detune rebuilds the per-voice tables, so it keeps the sample-by-sample order.
+    if (!panAndDetuneConstant)
+    {
+        auto slot = parameters;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            slot.level = level[i];
+            slot.pan = pan[i];
+            slot.detune = detune[i];
+            const auto frame = renderNative(midiNote[i], slot, pitchModSemitones[i], phaseModDegrees[i]);
+            left[i] = frame.left;
+            right[i] = frame.right;
+        }
+        return;
+    }
+
+    const auto rate = static_cast<float>(sampleRate);
+    const auto pitchOffset = static_cast<float>(parameters.octave * 12 + parameters.note);
+    const auto fine = parameters.fineCents * 0.01f;
+    std::array<float, renderBlockMaxSamples> frequencyOverRate;
+    std::array<float, renderBlockMaxSamples> gain;
+    std::array<float, renderBlockMaxSamples> phaseOffset;
+    auto anyPhaseOffset = false;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto index = static_cast<std::size_t>(i);
+        const auto note = midiNote[i] + pitchOffset + fine + pitchModSemitones[i];
+        if (note != cachedNativeNote)
+        {
+            cachedNativeNote = note;
+            cachedNativeFrequency = clampFast(midiNoteToHz(note), 1.0f, rate * 0.45f);
+        }
+        frequencyOverRate[index] = cachedNativeFrequency / rate;
+        gain[index] = nativeVoiceGain(level[i], count);
+        phaseOffset[index] = clampFast(phaseModDegrees[i], -720.0f, 720.0f) / 360.0f;
+        anyPhaseOffset = anyPhaseOffset || phaseOffset[index] != 0.0f;
+    }
+    updateDetuneRatios(count, clampUnitFast(detune[0]));
+    updateNativePan(count, pan[0], clampUnitFast(parameters.stereo));
+
+    // Noise comes from one generator that the voices share, drawn sample by sample in voice order.
+    std::array<float, renderBlockMaxSamples * maxStackCount> noiseValues;
+    if (parameters.waveform == OscillatorSlotWaveform::Noise)
+        for (int i = 0; i < numSamples * count; ++i)
+            noiseValues[static_cast<std::size_t>(i)] = nativeWave<OscillatorSlotWaveform::Noise>(0.0f, 0.0f);
+
+    std::fill(left, left + numSamples, 0.0f);
+    std::fill(right, right + numSamples, 0.0f);
+    const auto sign = parameters.invert ? -1.0f : 1.0f;
+    const auto minimumIncrement = 1.0f / rate;
+    // Each unison voice runs through the block in turn; per sample the voices still add in voice
+    // order, so the sum is the same as renderNative's.
+    const auto runVoices = [&](auto waveformTag) noexcept {
+        constexpr auto waveform = decltype(waveformTag)::value;
+        for (int voice = 0; voice < count; ++voice)
+        {
+            const auto voiceIndex = static_cast<std::size_t>(voice);
+            auto storedPhase = phases[voiceIndex];
+            const auto ratio = detuneRatios[voiceIndex];
+            const auto panLeft = nativePanLeft[voiceIndex];
+            const auto panRight = nativePanRight[voiceIndex];
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const auto index = static_cast<std::size_t>(i);
+                const auto phase = !anyPhaseOffset || phaseOffset[index] == 0.0f
+                    ? storedPhase
+                    : wrapUnit(storedPhase + phaseOffset[index]);
+                const auto increment = clampFast(frequencyOverRate[index] * ratio, minimumIncrement, 0.45f);
+                auto value = 0.0f;
+                if constexpr (waveform == OscillatorSlotWaveform::Noise)
+                    value = noiseValues[index * static_cast<std::size_t>(count) + voiceIndex];
+                else
+                    value = nativeWave<waveform>(phase, increment);
+                advancePhase(storedPhase, increment);
+                const auto sample = value * gain[index] * sign;
+                left[i] += sample * panLeft;
+                right[i] += sample * panRight;
+            }
+            phases[voiceIndex] = storedPhase;
+        }
+    };
+    using Waveform = OscillatorSlotWaveform;
+    switch (parameters.waveform)
+    {
+        case Waveform::Saw: runVoices(std::integral_constant<Waveform, Waveform::Saw> {}); break;
+        case Waveform::Pulse: runVoices(std::integral_constant<Waveform, Waveform::Pulse> {}); break;
+        case Waveform::HalfPulse: runVoices(std::integral_constant<Waveform, Waveform::HalfPulse> {}); break;
+        case Waveform::QuarterPulse: runVoices(std::integral_constant<Waveform, Waveform::QuarterPulse> {}); break;
+        case Waveform::Sine: runVoices(std::integral_constant<Waveform, Waveform::Sine> {}); break;
+        case Waveform::Triangle: runVoices(std::integral_constant<Waveform, Waveform::Triangle> {}); break;
+        case Waveform::SawTriangle: runVoices(std::integral_constant<Waveform, Waveform::SawTriangle> {}); break;
+        case Waveform::Noise: runVoices(std::integral_constant<Waveform, Waveform::Noise> {}); break;
+    }
+    for (int i = 0; i < numSamples; ++i)
+    {
+        left[i] = std::isfinite(left[i]) ? left[i] : 0.0f;
+        right[i] = std::isfinite(right[i]) ? right[i] : 0.0f;
+    }
 }
 
 float OscillatorStack::renderSample(float midiNote, const SynthParameters& parameters,
