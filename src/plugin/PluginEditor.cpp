@@ -16,7 +16,7 @@
 namespace
 {
 constexpr int canvasWidth = 908;
-constexpr int modulationExtra = 135; // the modulation section is taller than the original layout; everything under it moves down
+constexpr int modulationExtra = 87; // the modulation section is taller than the original layout; everything under it moves down
 constexpr int canvasHeight = 591 + modulationExtra;
 const auto graphite = juce::Colour(0xff292b2c);
 const auto silver = juce::Colour(0xffd0d4d2);
@@ -608,6 +608,10 @@ private:
         for (std::size_t index = 0; index < catalog.size(); ++index)
             if (catalog[index].nativeIndex >= 0 && catalog[index].targetParameterId == id)
                 modulationDestination = static_cast<int>(index) + 1; // choice 0 is "None"
+        if (modulationDestination < 0 && id == "filter_control.cutoff_semitones")
+            for (std::size_t index = 0; index < catalog.size(); ++index)
+                if (catalog[index].destination == synth::ModulationDestination::FilterCutoff)
+                    modulationDestination = static_cast<int>(index) + 1; // acts on both parts
         if (modulationDestination < 0)
             return;
         modulationDestinations.push_back(modulationDestination);
@@ -651,6 +655,8 @@ private:
     }
     void paintModulation(juce::Graphics& g, juce::Point<float> centre, float radius) const
     {
+        // The control clips what it draws, so the ring is drawn no wider than the control itself.
+        radius = std::min(radius, std::min({ centre.x, static_cast<float>(getWidth()) - centre.x, centre.y }) - 2.0f);
         const auto position = [](float value) { return juce::MathConstants<float>::pi * (1.22f + 1.56f * juce::jlimit(0.0f, 1.0f, value)); };
         for (int slot = 1; slot <= synth::transModSlotCount; ++slot)
         {
@@ -1300,9 +1306,9 @@ private:
         result.plot = getLocalBounds().toFloat().reduced(8.0f, 9.0f).withTrimmedBottom(2.0f);
         const auto width = result.plot.getWidth();
         result.attack = width * 0.24f;
-        result.decay = width * 0.26f;
-        result.hold = width * 0.20f;
-        result.release = width * 0.30f;
+        result.decay = width * 0.28f;
+        result.hold = width * 0.14f;
+        result.release = width * 0.34f;
         result.sustain = normalizedValue(2);
         const auto bottom = result.plot.getBottom();
         const auto top = result.plot.getY();
@@ -1319,34 +1325,34 @@ private:
             return { (shape.hold_.start.x + shape.hold_.end.x) * 0.5f, shape.hold_.start.y };
         return handle == 0 ? shape.attack_.end : handle == 1 ? shape.decay_.end : shape.release_.end;
     }
+    // The display draws every join smoothly: the decay settles into the sustain level without a corner, and the release
+    // leaves the sustain level the same way. (The sound uses exponential stages; the times are shown on the knobs.)
     juce::Path curvePath(const Layout& shape) const
     {
         const auto height = shape.plot.getHeight();
         const auto bottom = shape.plot.getBottom();
+        const auto sustain = shape.sustain;
         const auto k = std::log((1.0f + overshoot) / overshoot);
         juce::Path path;
         path.startNewSubPath(shape.attack_.start);
-        constexpr int steps = 18;
+        constexpr int steps = 20;
         for (int i = 1; i <= steps; ++i)
         {
             const auto u = static_cast<float>(i) / steps;
             const auto level = std::min(1.0f, (1.0f + overshoot) * (1.0f - std::exp(-k * u)));
             path.lineTo(shape.attack_.start.x + (shape.attack_.end.x - shape.attack_.start.x) * u, bottom - level * height);
         }
-        const auto sustain = shape.sustain;
-        const auto target = sustain - overshoot * (1.0f - sustain);
-        for (int i = 1; i <= steps; ++i)
+        for (int i = 1; i <= steps; ++i) // decay: steep at first, level where it meets the sustain
         {
             const auto u = static_cast<float>(i) / steps;
-            const auto level = std::max(sustain, target + (1.0f - target) * std::exp(-k * u));
+            const auto level = sustain + (1.0f - sustain) * (1.0f - u) * (1.0f - u);
             path.lineTo(shape.decay_.start.x + (shape.decay_.end.x - shape.decay_.start.x) * u, bottom - level * height);
         }
         path.lineTo(shape.hold_.end);
-        const auto releaseK = std::log((sustain + overshoot) / overshoot);
-        for (int i = 1; i <= steps; ++i)
+        for (int i = 1; i <= steps; ++i) // release: level at first, then falling away
         {
             const auto u = static_cast<float>(i) / steps;
-            const auto level = std::max(0.0f, -overshoot + (sustain + overshoot) * std::exp(-releaseK * u));
+            const auto level = sustain * (1.0f - u * u);
             path.lineTo(shape.release_.start.x + (shape.release_.end.x - shape.release_.start.x) * u, bottom - level * height);
         }
         return path;
@@ -2578,9 +2584,9 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     const auto readout = [this](const juce::String& name, const juce::String& value) { announce(name, value); };
     for (int slot = 1; slot <= 4; ++slot)
         addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { slot }, false, readout),
-                   modulationPanelX(slot - 1) + 3, 524, modulationPanelWidth - 6, 115);
+                   modulationPanelX(slot - 1) + 3, modulationPanelTop + 171, modulationPanelWidth - 6, 68);
     addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { 5, 6, 7, 8 }, true, readout),
-               modulationPanelX(4) + 3, modulationPanelTop + 19, modulationPanelWidth - 6 - 29, 268);
+               modulationPanelX(4) + 3, modulationPanelTop + 19, modulationPanelWidth - 6 - 29, 220);
     constexpr int low = modulationExtra;
     caption("BEND", 33, 518 + low, 34, 11, 8);
     caption("RANGE", 32, 529 + low, 35, 11, 8);
@@ -2752,11 +2758,11 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     panel(g, { 31, 134, 219, 121 }, "FILTER " + juce::String(selectedPart == 0 ? "A" : "B"), true, selectedPart);
     panel(g, { 31, 257, 219, 91 }, "FILTER CONTROL");
     panel(g, { 658, 134, 220, 129 }, "MIXER");
-    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 290 }, "MOD ENV 1");
-    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 290 }, "MOD ENV 2");
-    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 290 }, "LFO 1");
-    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 290 }, "LFO 2");
-    panel(g, { modulationPanelX(4), modulationPanelTop, 878 - modulationPanelX(4) + 1, 290 }, "MISC");
+    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 242 }, "MOD ENV 1");
+    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 242 }, "MOD ENV 2");
+    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 242 }, "LFO 1");
+    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 242 }, "LFO 2");
+    panel(g, { modulationPanelX(4), modulationPanelTop, 878 - modulationPanelX(4) + 1, 242 }, "MISC");
 
     // The LCD bezel has nested machined edges surrounding the pale blue screen.
     auto bezel = juce::Rectangle<float>(255, 134, 399, 214);
