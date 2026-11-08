@@ -1157,23 +1157,27 @@ public:
     {
         displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
         const auto shape = layout();
-        // Stage dividers and letters sit at fixed places, so the time axis is easy to read.
+        // Each stage is labelled under its own span, and a faint line marks where one stage ends.
         const std::array<const char*, 4> letters { "A", "D", "S", "R" };
-        const std::array<float, 4> widths { shape.attack, shape.decay, shape.hold, shape.release };
-        auto edge = shape.plot.getX();
+        const std::array<const Stage*, 4> stages { &shape.attack_, &shape.decay_, &shape.hold_, &shape.release_ };
         for (std::size_t i = 0; i < 4; ++i)
         {
+            const auto left = stages[i]->start.x;
+            const auto right = stages[i]->end.x;
             if (i > 0)
             {
-                g.setColour(juce::Colours::white.withAlpha(0.07f));
-                g.drawVerticalLine(juce::roundToInt(edge), shape.plot.getY(), shape.plot.getBottom());
+                g.setColour(juce::Colours::white.withAlpha(0.08f));
+                g.drawVerticalLine(juce::roundToInt(left), shape.plot.getY(), shape.plot.getBottom());
             }
-            drawText(g, letters[i], { juce::roundToInt(edge), juce::roundToInt(shape.plot.getBottom()) + 1,
-                                      juce::roundToInt(widths[i]), 9 }, 7.0f, lettering.withAlpha(0.45f));
-            edge += widths[i];
+            drawText(g, letters[i], { juce::roundToInt((left + right) * 0.5f) - 6, juce::roundToInt(shape.plot.getBottom()) + 1, 12, 9 },
+                     7.0f, lettering.withAlpha(0.5f));
         }
         g.setColour(juce::Colours::white.withAlpha(0.07f));
         g.drawHorizontalLine(juce::roundToInt(shape.plot.getY()), shape.plot.getX(), shape.plot.getRight());
+        // The sustain level, as a dotted line across the display.
+        g.setColour(colour.withAlpha(0.18f));
+        for (float x = shape.plot.getX(); x < shape.plot.getRight(); x += 6.0f)
+            g.drawHorizontalLine(juce::roundToInt(shape.hold_.start.y), x, x + 2.5f);
 
         const auto curve = curvePath(shape);
         juce::Path fill(curve);
@@ -1185,7 +1189,7 @@ public:
         g.fillPath(fill);
         g.setColour(colour);
         g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        for (int handle = 0; handle < 3; ++handle)
+        for (int handle = 0; handle < 4; ++handle)
         {
             const auto point = handlePosition(shape, handle);
             const auto active = handle == dragged || handle == hovered;
@@ -1236,10 +1240,9 @@ public:
         if (dragged == 0)
             setNormalized(0, unstretch((position.x - shape.attack_.start.x) / shape.attack));
         else if (dragged == 1)
-        {
             setNormalized(1, unstretch((position.x - shape.attack_.end.x) / shape.decay));
+        else if (dragged == 2)
             setNormalized(2, (shape.plot.getBottom() - position.y) / shape.plot.getHeight());
-        }
         else
             setNormalized(3, unstretch((position.x - shape.hold_.end.x) / shape.release));
         repaint();
@@ -1282,18 +1285,24 @@ private:
     static constexpr float overshoot = 0.1545f;
 
     // The time parameters are strongly skewed, so short times would crowd the left of each stage; the square root spreads them.
-    static float stretch(float position) { return std::sqrt(juce::jlimit(0.0f, 1.0f, position)); }
-    static float unstretch(float fraction) { const auto clamped = juce::jlimit(0.0f, 1.0f, fraction); return clamped * clamped; }
+    // Every stage keeps at least a sixth of its share, so a stage set to zero is still a visible span.
+    static constexpr float minimumShare = 0.17f;
+    static float stretch(float position) { return minimumShare + (1.0f - minimumShare) * std::sqrt(juce::jlimit(0.0f, 1.0f, position)); }
+    static float unstretch(float fraction)
+    {
+        const auto along = juce::jlimit(0.0f, 1.0f, (fraction - minimumShare) / (1.0f - minimumShare));
+        return along * along;
+    }
     float normalizedValue(std::size_t index) const { return parameters[index] != nullptr ? parameters[index]->getValue() : 0.0f; }
     Layout layout() const
     {
         Layout result;
         result.plot = getLocalBounds().toFloat().reduced(8.0f, 9.0f).withTrimmedBottom(2.0f);
         const auto width = result.plot.getWidth();
-        result.attack = width * 0.26f;
+        result.attack = width * 0.24f;
         result.decay = width * 0.26f;
-        result.hold = width * 0.14f;
-        result.release = width * 0.34f;
+        result.hold = width * 0.20f;
+        result.release = width * 0.30f;
         result.sustain = normalizedValue(2);
         const auto bottom = result.plot.getBottom();
         const auto top = result.plot.getY();
@@ -1306,6 +1315,8 @@ private:
     }
     static juce::Point<float> handlePosition(const Layout& shape, int handle)
     {
+        if (handle == 2) // the sustain handle sits in the middle of the hold
+            return { (shape.hold_.start.x + shape.hold_.end.x) * 0.5f, shape.hold_.start.y };
         return handle == 0 ? shape.attack_.end : handle == 1 ? shape.decay_.end : shape.release_.end;
     }
     juce::Path curvePath(const Layout& shape) const
@@ -1345,7 +1356,7 @@ private:
         const auto shape = layout();
         int best = -1;
         auto bestDistance = 10.0f;
-        for (int handle = 0; handle < 3; ++handle)
+        for (int handle = 0; handle < 4; ++handle)
         {
             const auto distance = position.getDistanceFrom(handlePosition(shape, handle));
             if (distance < bestDistance)
@@ -1358,7 +1369,7 @@ private:
     }
     static std::vector<std::size_t> parametersOfHandle(int handle)
     {
-        return handle == 0 ? std::vector<std::size_t> { 0 } : handle == 1 ? std::vector<std::size_t> { 1, 2 } : std::vector<std::size_t> { 3 };
+        return { static_cast<std::size_t>(handle) }; // attack, decay, sustain and release each have their own handle
     }
     void setNormalized(std::size_t index, float value)
     {
@@ -1608,9 +1619,9 @@ private:
         const auto plot = plotArea();
         switch (mode)
         {
-            case Mode::Shape: return { plot.getX() + 1, 4.0f, 52.0f, 10.0f };
-            case Mode::StepCount: return { plot.getRight() - 90, 4.0f, 44.0f, 10.0f };
-            default: return { plot.getRight() - 41, 4.0f, 40.0f, 10.0f };
+            case Mode::Shape: return { plot.getX() + 1, 4.0f, 48.0f, 10.0f };
+            case Mode::StepCount: return { plot.getRight() - 80, 4.0f, 40.0f, 10.0f };
+            default: return { plot.getRight() - 37, 4.0f, 36.0f, 10.0f };
         }
     }
     juce::Point<float> dotPosition(int dot) const
@@ -1815,20 +1826,21 @@ private:
     int used = 0;
 };
 
-// Lists every route of the instrument: source, destination and amount, in as many rows as there are routes. A source
-// reaches a destination through that destination's depth on the source's slot, so there is no limit of two targets.
-// Routes saved by older presets (the destination and amount pairs) are listed and edited here too.
-class ModulationMatrixPanel final : public ModulationDisplay
+// The routes of one source (or of the slots that take any source), listed under its panel: destination and amount, with
+// as many rows as there are routes. A source reaches a destination through that destination's depth on the source's
+// slot, so there is no limit of two targets. Routes saved by older presets (the destination and amount pairs) are listed
+// and edited here too. The list of the free slots (twoLine) also shows and changes the source of each route.
+class ModulationRouteList final : public ModulationDisplay
 {
 public:
-    ModulationMatrixPanel(SynthAudioProcessor& processor, ReadoutCallback readoutCallback)
-        : owner(processor), readout(std::move(readoutCallback))
+    ModulationRouteList(SynthAudioProcessor& processor, std::vector<int> slotNumbers, bool twoLineRows, ReadoutCallback readoutCallback)
+        : owner(processor), slots(std::move(slotNumbers)), twoLine(twoLineRows), readout(std::move(readoutCallback))
     {
-        setTitle("Modulation matrix");
-        setDescription("All modulation routes: source, destination and amount");
+        setTitle(twoLine ? "Other modulation routes" : modulationName(slots.front()) + " routes");
+        setDescription("Modulation routes: destination and amount");
         rebuild();
     }
-    ~ModulationMatrixPanel() override { endGesture(); }
+    ~ModulationRouteList() override { endGesture(); }
 
     void refresh() override
     {
@@ -1843,41 +1855,45 @@ public:
     {
         displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
         const auto labelColour = lettering.withAlpha(0.55f);
-        drawText(g, "SOURCE", { sourceX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
-        drawText(g, "DESTINATION", { destinationX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
-        drawText(g, "AMOUNT", { barX, 1, 100, headerHeight }, 7.5f, labelColour, juce::Justification::centredLeft);
-        drawText(g, juce::String(rows.size()) + (rows.size() == 1 ? " route" : " routes"), { barX + barWidth - 270, 1, 90, headerHeight },
-                 7.5f, labelColour, juce::Justification::centredRight);
+        drawText(g, juce::String(rows.size()) + (rows.size() == 1 ? " route" : " routes"), { 6, 1, 70, headerHeight }, 7.5f, labelColour,
+                 juce::Justification::centredLeft);
         const auto add = addArea();
         g.setColour(juce::Colour(0xff263033));
         g.fillRoundedRectangle(add, 2.0f);
-        drawText(g, "+ ADD ROUTE", add.toNearestInt(), 7.5f, lettering, juce::Justification::centred, true);
+        drawText(g, "+ ADD", add.toNearestInt(), 7.5f, lettering, juce::Justification::centred, true);
 
         if (rows.empty())
         {
-            drawText(g, "Drag a source dot onto any knob, or press + ADD ROUTE.", { 0, headerHeight + 22, getWidth(), 14 }, 9.0f,
-                     lettering.withAlpha(0.5f));
+            const juce::String first = twoLine ? "Press + ADD to route" : "Drag the dot above onto";
+            const juce::String second = twoLine ? "velocity, key, wheel..." : "a knob, or press + ADD.";
+            drawText(g, first, { 4, headerHeight + 16, getWidth() - 8, 12 }, 8.5f, lettering.withAlpha(0.5f));
+            drawText(g, second, { 4, headerHeight + 28, getWidth() - 8, 12 }, 8.5f, lettering.withAlpha(0.5f));
             return;
         }
-        for (int visible = 0; visible < visibleRows; ++visible)
+        const auto rowH = rowHeight();
+        for (int visible = 0; visible < visibleRows(); ++visible)
         {
             const auto index = firstRow + visible;
             if (index >= static_cast<int>(rows.size()))
                 break;
             const auto& row = rows[static_cast<std::size_t>(index)];
-            const auto y = headerHeight + visible * rowHeight;
+            const auto y = headerHeight + visible * rowH;
             if (visible % 2 == 0)
             {
                 g.setColour(juce::Colours::white.withAlpha(0.035f));
-                g.fillRect(2, y, getWidth() - 4, rowHeight);
+                g.fillRect(2, y, getWidth() - 4, rowH);
             }
             const auto colour = modulationColour(row.slot);
-            g.setColour(colour);
-            g.fillEllipse(static_cast<float>(sourceX), static_cast<float>(y + 4), 8.0f, 8.0f);
-            drawText(g, sourceLabel(row.slot), { sourceX + 13, y, 140, rowHeight }, 9.0f, lettering, juce::Justification::centredLeft);
-            drawText(g, destinationLabel(row), { destinationX, y, destinationWidth, rowHeight }, 9.0f, lettering, juce::Justification::centredLeft);
+            const auto lineY = twoLine ? y + 15 : y;
+            if (twoLine)
+            {
+                g.setColour(colour);
+                g.fillEllipse(5.0f, static_cast<float>(y + 4), 7.0f, 7.0f);
+                drawText(g, sourceLabel(row.slot), { 16, y, getWidth() - 36, 14 }, 8.5f, lettering, juce::Justification::centredLeft, true);
+            }
+            drawText(g, destinationLabel(row), { 5, lineY, destinationWidth(), 14 }, 8.5f, lettering, juce::Justification::centredLeft);
             const auto amount = amounts[static_cast<std::size_t>(index)];
-            const auto track = juce::Rectangle<float>(static_cast<float>(barX), static_cast<float>(y + 5), static_cast<float>(barWidth - 52), 6.0f);
+            const auto track = juce::Rectangle<float>(static_cast<float>(barX()), static_cast<float>(lineY + 4), static_cast<float>(barWidth()), 6.0f);
             g.setColour(juce::Colour(0xff0b0e0f));
             g.fillRoundedRectangle(track, 3.0f);
             g.setColour(juce::Colours::white.withAlpha(0.25f));
@@ -1885,13 +1901,11 @@ public:
             const auto x = track.getCentreX() + amount * track.getWidth() * 0.5f;
             g.setColour(colour);
             g.fillRoundedRectangle(juce::Rectangle<float>(std::min(x, track.getCentreX()), track.getY(), std::abs(x - track.getCentreX()), track.getHeight()), 2.0f);
-            g.fillEllipse(x - 4.0f, track.getCentreY() - 4.0f, 8.0f, 8.0f);
-            drawText(g, juce::String(juce::roundToInt(amount * 100.0f)) + " %", { barX + barWidth - 46, y, 40, rowHeight }, 8.5f,
-                     lettering.withAlpha(0.85f), juce::Justification::centredRight);
-            drawText(g, "x", { removeX, y, 14, rowHeight }, 10.0f, lettering.withAlpha(0.6f));
+            g.fillEllipse(x - 3.5f, track.getCentreY() - 3.5f, 7.0f, 7.0f);
+            drawText(g, "x", { removeX(), twoLine ? y : lineY, 12, 14 }, 9.5f, lettering.withAlpha(0.6f));
         }
-        if (static_cast<int>(rows.size()) > visibleRows)
-            drawText(g, "scroll", { getWidth() - 40, getHeight() - 11, 36, 10 }, 7.0f, lettering.withAlpha(0.35f), juce::Justification::centredRight);
+        if (static_cast<int>(rows.size()) > visibleRows())
+            drawText(g, "scroll", { getWidth() - 40, getHeight() - 10, 36, 9 }, 6.5f, lettering.withAlpha(0.35f), juce::Justification::centredRight);
     }
 
     void mouseDown(const juce::MouseEvent& event) override
@@ -1899,26 +1913,31 @@ public:
         endGesture();
         if (addArea().contains(event.position))
         {
-            chooseNewRoute();
+            addRoute();
             return;
         }
         const auto index = rowAt(event.position);
         if (index < 0)
             return;
-        const auto& row = rows[static_cast<std::size_t>(index)];
+        const auto row = rows[static_cast<std::size_t>(index)];
         const auto x = static_cast<int>(event.position.x);
-        if (x >= removeX)
+        const auto lineY = event.position.y - static_cast<float>(headerHeight + (index - firstRow) * rowHeight());
+        const auto onSourceLine = twoLine && lineY < 15.0f;
+        if (x >= removeX() && (onSourceLine || !twoLine))
             removeRow(row);
-        else if (x >= barX)
+        else if (onSourceLine)
+        {
+            if (row.slot > 4)
+                chooseSlotSource(row.slot);
+        }
+        else if (x >= barX() - 2)
         {
             draggedRow = index;
             beginGesture(row);
             dragAmount(event.position.x);
         }
-        else if (x >= destinationX)
+        else
             chooseDestination(row);
-        else if (row.slot > 4)
-            chooseSlotSource(row.slot);
     }
     void mouseDrag(const juce::MouseEvent& event) override
     {
@@ -1932,7 +1951,7 @@ public:
     }
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
     {
-        const auto limit = std::max(0, static_cast<int>(rows.size()) - visibleRows);
+        const auto limit = std::max(0, static_cast<int>(rows.size()) - visibleRows());
         firstRow = juce::jlimit(0, limit, firstRow + (wheel.deltaY > 0 ? -1 : 1));
         repaint();
     }
@@ -1945,21 +1964,21 @@ private:
         int route = 0;       // 0: a depth; 1 or 2: an older route entry (destination and amount)
         bool operator==(const Row&) const = default;
     };
-    static constexpr int headerHeight = 13;
-    static constexpr int rowHeight = 17;
-    static constexpr int visibleRows = 5;
-    static constexpr int sourceX = 8;
-    static constexpr int destinationX = 170;
-    static constexpr int destinationWidth = 300;
-    static constexpr int barX = 490;
-    static constexpr int barWidth = 300;
-    static constexpr int removeX = 810;
+    static constexpr int headerHeight = 14;
 
-    juce::Rectangle<float> addArea() const { return { static_cast<float>(getWidth() - 96), 1.0f, 90.0f, 11.0f }; }
+    int rowHeight() const { return twoLine ? 30 : 17; }
+    int visibleRows() const { return std::max(1, (getHeight() - headerHeight - 2) / rowHeight()); }
+    int barWidth() const { return twoLine ? 56 : 46; }
+    int barX() const { return getWidth() - barWidth() - (twoLine ? 8 : 24); }
+    int removeX() const { return getWidth() - 16; }
+    int destinationWidth() const { return twoLine ? barX() - 8 : barX() - 8; }
+    juce::Rectangle<float> addArea() const { return { static_cast<float>(getWidth() - 46), 2.0f, 42.0f, 11.0f }; }
     int rowAt(juce::Point<float> position) const
     {
-        const auto visible = static_cast<int>((position.y - headerHeight) / rowHeight);
-        if (position.y < headerHeight || visible < 0 || visible >= visibleRows)
+        if (position.y < headerHeight)
+            return -1;
+        const auto visible = static_cast<int>((position.y - headerHeight) / rowHeight());
+        if (visible < 0 || visible >= visibleRows())
             return -1;
         const auto index = firstRow + visible;
         return index < static_cast<int>(rows.size()) ? index : -1;
@@ -1970,14 +1989,14 @@ private:
             return modulationName(slot);
         const auto* spec = synth::findParameterSpec("transmod." + std::to_string(slot) + ".source");
         const auto index = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
-        if (spec != nullptr && index >= 0 && index < static_cast<int>(spec->choices.size()))
+        if (spec != nullptr && index > 0 && index < static_cast<int>(spec->choices.size()))
             return juce::String(spec->choices[static_cast<std::size_t>(index)]);
-        return "Mod " + juce::String(slot);
+        return "Source " + juce::String(slot - 4);
     }
     juce::String destinationLabel(const Row& row) const
     {
         const auto& catalog = synth::modulationDestinationCatalog();
-        return juce::String(catalog[static_cast<std::size_t>(row.destination)].label) + (row.route > 0 ? "   (older route)" : "");
+        return juce::String(catalog[static_cast<std::size_t>(row.destination)].label);
     }
     std::string routeId(const Row& row, const char* suffix) const
     {
@@ -1994,7 +2013,7 @@ private:
         rows.clear();
         amounts.clear();
         const auto count = static_cast<int>(synth::modulationDestinationCatalog().size());
-        for (int slot = 1; slot <= synth::transModSlotCount; ++slot)
+        for (const auto slot : slots)
         {
             for (int destination = 0; destination < count; ++destination)
                 if (std::abs(modulationAmount(owner, slot, destination)) > 0.0001f)
@@ -2008,7 +2027,7 @@ private:
         }
         for (const auto& row : rows)
             amounts.push_back(amountOf(row));
-        firstRow = juce::jlimit(0, std::max(0, static_cast<int>(rows.size()) - visibleRows), firstRow);
+        firstRow = juce::jlimit(0, std::max(0, static_cast<int>(rows.size()) - visibleRows()), firstRow);
     }
     void beginGesture(const Row& row)
     {
@@ -2028,7 +2047,7 @@ private:
     {
         if (gestureParameter == nullptr || draggedRow < 0 || draggedRow >= static_cast<int>(rows.size()))
             return;
-        const auto amount = std::round(juce::jlimit(-1.0f, 1.0f, ((x - static_cast<float>(barX)) / static_cast<float>(barWidth - 52)) * 2.0f - 1.0f) * 100.0f) / 100.0f;
+        const auto amount = std::round(juce::jlimit(-1.0f, 1.0f, ((x - static_cast<float>(barX())) / static_cast<float>(barWidth())) * 2.0f - 1.0f) * 100.0f) / 100.0f;
         const auto& row = rows[static_cast<std::size_t>(draggedRow)];
         if (row.route == 0)
         {
@@ -2086,7 +2105,7 @@ private:
     {
         juce::PopupMenu menu;
         buildDestinationMenu(menu, 1000, row.destination);
-        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this), row](int result) {
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationRouteList>(this), row](int result) {
             if (result < 1000 || safe == nullptr)
                 return;
             safe->moveRow(row, result - 1000);
@@ -2107,17 +2126,21 @@ private:
         rebuild();
         repaint();
     }
-    // The sources a route can come from: the four with their own slot, then every other source in the list.
-    void chooseSlotSource(int slot)
+    // The sources the free slots can take: every source except the four that have their own panel.
+    void addSourceItems(juce::PopupMenu& menu, int idBase, int current) const
     {
-        juce::PopupMenu menu;
         const auto* spec = synth::findParameterSpec("transmod.5.source");
         if (spec == nullptr)
             return;
-        const auto current = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
         for (int i = 1; i < static_cast<int>(spec->choices.size()); ++i)
-            menu.addItem(i, spec->choices[static_cast<std::size_t>(i)], true, i == current);
-        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this), slot](int result) {
+            if (i != fixedModulationSource(1) && i != fixedModulationSource(2) && i != fixedModulationSource(3) && i != fixedModulationSource(4))
+                menu.addItem(idBase + i, spec->choices[static_cast<std::size_t>(i)], true, i == current);
+    }
+    void chooseSlotSource(int slot)
+    {
+        juce::PopupMenu menu;
+        addSourceItems(menu, 0, juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source")));
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationRouteList>(this), slot](int result) {
             if (result <= 0 || safe == nullptr)
                 return;
             setParameterValue(safe->owner, "transmod." + std::to_string(slot) + ".source", static_cast<float>(result));
@@ -2125,21 +2148,25 @@ private:
             safe->repaint();
         });
     }
-    void chooseNewRoute()
+    void addRoute()
     {
+        if (!twoLine)
+        {
+            juce::PopupMenu destinations;
+            buildDestinationMenu(destinations, 1000, -1);
+            destinations.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationRouteList>(this)](int chosen) {
+                if (chosen < 1000 || safe == nullptr)
+                    return;
+                safe->addAmount(safe->slots.front(), chosen - 1000);
+            });
+            return;
+        }
         juce::PopupMenu menu;
-        for (int slot = 1; slot <= 4; ++slot)
-            menu.addItem(slot, modulationName(slot));
-        menu.addSeparator();
-        const auto* spec = synth::findParameterSpec("transmod.5.source");
-        if (spec != nullptr)
-            for (int i = 1; i < static_cast<int>(spec->choices.size()); ++i)
-                if (i != fixedModulationSource(1) && i != fixedModulationSource(2) && i != fixedModulationSource(3) && i != fixedModulationSource(4))
-                    menu.addItem(100 + i, spec->choices[static_cast<std::size_t>(i)]);
-        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationMatrixPanel>(this)](int result) {
-            if (result <= 0 || safe == nullptr)
+        addSourceItems(menu, 100, -1);
+        menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ModulationRouteList>(this)](int result) {
+            if (result <= 100 || safe == nullptr)
                 return;
-            int slot = result <= 4 ? result : safe->slotForSource(result - 100);
+            const auto slot = safe->slotForSource(result - 100);
             if (slot <= 0)
             {
                 safe->readout("Modulation", "All four free source slots are in use");
@@ -2147,23 +2174,26 @@ private:
             }
             juce::PopupMenu destinations;
             buildDestinationMenu(destinations, 1000, -1);
-            destinations.showMenuAsync(optionsAtMouse(), [safe, slot, source = result](int chosen) {
+            destinations.showMenuAsync(optionsAtMouse(), [safe, slot, source = result - 100](int chosen) {
                 if (chosen < 1000 || safe == nullptr)
                     return;
-                if (source > 4)
-                    setParameterValue(safe->owner, "transmod." + std::to_string(slot) + ".source", static_cast<float>(source - 100));
-                setModulationAmount(safe->owner, slot, chosen - 1000, 0.5f);
-                safe->rebuild();
-                safe->firstRow = std::max(0, static_cast<int>(safe->rows.size()) - visibleRows);
-                safe->repaint();
+                setParameterValue(safe->owner, "transmod." + std::to_string(slot) + ".source", static_cast<float>(source));
+                safe->addAmount(slot, chosen - 1000);
             });
         });
     }
-    // The slot (5 to 8) that already carries this source, or the first one nothing uses; 0 if none is left.
+    void addAmount(int slot, int destination)
+    {
+        setModulationAmount(owner, slot, destination, 0.5f);
+        rebuild();
+        firstRow = std::max(0, static_cast<int>(rows.size()) - visibleRows());
+        repaint();
+    }
+    // The free slot that already carries this source, or the first one nothing uses; 0 if none is left.
     int slotForSource(int source) const
     {
         int empty = 0;
-        for (int slot = 5; slot <= synth::transModSlotCount; ++slot)
+        for (const auto slot : slots)
         {
             const auto current = juce::roundToInt(readParameterValue(owner, "transmod." + std::to_string(slot) + ".source"));
             if (current == source)
@@ -2176,6 +2206,8 @@ private:
     }
 
     SynthAudioProcessor& owner;
+    std::vector<int> slots;
+    bool twoLine;
     ReadoutCallback readout;
     std::vector<Row> rows;
     std::vector<float> amounts;
@@ -2274,9 +2306,9 @@ private:
     ClassicAction* action(const juce::String& value, int x, int y, int width, int height,
                           std::function<void()> callback, bool lcd = false, const juce::String& accessibleTitle = {}, bool selectable = false);
     void envelope(const std::string& prefix, int x, int y, int width);
-    static constexpr int modulationPanelWidth = 209;
+    static constexpr int modulationPanelWidth = 172;
     static constexpr int modulationPanelTop = 352;
-    static int modulationPanelX(int index) { return 31 + index * 213; }
+    static int modulationPanelX(int index) { return 31 + index * 176; }
     void modulationEnvelope(const std::string& prefix, int slot, int x);
     void modulationHandle(int slot, int x, int y);
     void addDisplay(std::unique_ptr<ModulationDisplay> display, int x, int y, int width, int height);
@@ -2417,7 +2449,7 @@ void SynthAudioProcessorEditor::ClassicSurface::modulationEnvelope(const std::st
     const std::array<std::string, 4> suffixes { "attack_ms", "decay_ms", "sustain", "release_ms" };
     const std::array<juce::String, 4> labels { "ATTACK", "DECAY", "SUSTAIN", "RELEASE" };
     for (std::size_t i = 0; i < 4; ++i)
-        add(prefix + suffixes[i], labels[i], Style::Knob, x + 5 + static_cast<int>(i) * 50, modulationPanelTop + 109, 44, 53);
+        add(prefix + suffixes[i], labels[i], Style::Knob, x + 4 + static_cast<int>(i) * 41, modulationPanelTop + 109, 40, 53);
     action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
            [this, slot, prefix] { sectionMenu("Modulation Envelope", { prefix, "transmod." + std::to_string(slot) + "." }); }, false,
            "Modulation envelope " + juce::String(slot) + " menu");
@@ -2473,13 +2505,13 @@ void SynthAudioProcessorEditor::ClassicSurface::lfo(int number, int x)
                                                  [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
                x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 80);
     const auto y = modulationPanelTop + 101;
-    add(rateId, "RATE", Style::Knob, x + 5, y, 44, 53);
-    add(prefix + "gain", "GAIN", Style::Knob, x + 55, y, 44, 53);
-    add(prefix + "offset", "OFFSET", Style::Knob, x + 105, y, 44, 53);
+    add(rateId, "RATE", Style::Knob, x + 4, y, 40, 53);
+    add(prefix + "gain", "GAIN", Style::Knob, x + 45, y, 40, 53);
+    add(prefix + "offset", "OFFSET", Style::Knob, x + 86, y, 40, 53);
     if (stepShape)
-        add(prefix + "step_smooth", "SMOOTH", Style::Knob, x + 155, y, 44, 53);
+        add(prefix + "step_smooth", "SMOOTH", Style::Knob, x + 127, y, 40, 53);
     else
-        add(prefix + "phase_degrees", "PHASE", Style::Knob, x + 155, y, 44, 53);
+        add(prefix + "phase_degrees", "PHASE", Style::Knob, x + 127, y, 40, 53);
     action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
            [this, prefix, number] { sectionMenu("LFO", { prefix, "transmod." + std::to_string(number + 2) + "." }); }, false, "LFO " + juce::String(number) + " menu");
     modulationHandle(number + 2, x + modulationPanelWidth - 38, modulationPanelTop + 2);
@@ -2543,8 +2575,12 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     modulationEnvelope("mod_env.2.", 2, modulationPanelX(1));
     lfo(1, modulationPanelX(2));
     lfo(2, modulationPanelX(3));
-    addDisplay(std::make_unique<ModulationMatrixPanel>(owner, [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
-               34, 541, 841, 98);
+    const auto readout = [this](const juce::String& name, const juce::String& value) { announce(name, value); };
+    for (int slot = 1; slot <= 4; ++slot)
+        addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { slot }, false, readout),
+                   modulationPanelX(slot - 1) + 3, 524, modulationPanelWidth - 6, 115);
+    addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { 5, 6, 7, 8 }, true, readout),
+               modulationPanelX(4) + 3, modulationPanelTop + 19, modulationPanelWidth - 6 - 29, 268);
     constexpr int low = modulationExtra;
     caption("BEND", 33, 518 + low, 34, 11, 8);
     caption("RANGE", 32, 529 + low, 35, 11, 8);
@@ -2716,11 +2752,11 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     panel(g, { 31, 134, 219, 121 }, "FILTER " + juce::String(selectedPart == 0 ? "A" : "B"), true, selectedPart);
     panel(g, { 31, 257, 219, 91 }, "FILTER CONTROL");
     panel(g, { 658, 134, 220, 129 }, "MIXER");
-    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 168 }, "MOD ENV 1");
-    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 168 }, "MOD ENV 2");
-    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 168 }, "LFO 1");
-    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 168 }, "LFO 2");
-    panel(g, { 31, 524, 847, 118 }, "MODULATION MATRIX");
+    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 290 }, "MOD ENV 1");
+    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 290 }, "MOD ENV 2");
+    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 290 }, "LFO 1");
+    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 290 }, "LFO 2");
+    panel(g, { modulationPanelX(4), modulationPanelTop, 878 - modulationPanelX(4) + 1, 290 }, "MISC");
 
     // The LCD bezel has nested machined edges surrounding the pale blue screen.
     auto bezel = juce::Rectangle<float>(255, 134, 399, 214);
