@@ -167,13 +167,26 @@ void panel(juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& t
     drawText(g, title, header, 10.1f, juce::Colour(0xfff2d1a0), juce::Justification::centred, true);
 }
 
+// The filter modes are stored as short codes (L2 = lowpass 12 dB, ...); readouts name them in full.
+juce::String filterModeName(const std::string& code)
+{
+    static const std::map<std::string, juce::String> names {
+        { "L2", "Lowpass 12 dB" }, { "L4", "Lowpass 24 dB" }, { "B2", "Bandpass 12 dB" }, { "B4", "Bandpass 24 dB" },
+        { "H2", "Highpass 12 dB" }, { "H4", "Highpass 24 dB" }, { "Peak2", "Peak 12 dB" }, { "Notch2", "Notch 12 dB" },
+        { "Notch4", "Notch 24 dB" },
+    };
+    const auto found = names.find(code);
+    return found != names.end() ? found->second : juce::String(code);
+}
+
 juce::String formattedValue(const synth::ParameterSpec& spec, float value)
 {
     if (std::abs(value) < 0.00001f) value = 0.0f;
     if (spec.kind == synth::ParameterKind::Choice)
     {
         const auto index = juce::jlimit(0, static_cast<int>(spec.choices.size()) - 1, juce::roundToInt(value));
-        return spec.choices[static_cast<std::size_t>(index)];
+        const auto& choice = spec.choices[static_cast<std::size_t>(index)];
+        return spec.id.ends_with("filter.mode") ? filterModeName(choice) : juce::String(choice);
     }
     if (spec.kind == synth::ParameterKind::Bool)
         return value >= 0.5f ? "On" : "Off";
@@ -1099,7 +1112,17 @@ private:
     };
     void announce()
     {
-        if (specification != nullptr) publishReadout(specification->name, displayText(physical()));
+        if (specification == nullptr)
+            return;
+        if (style == Style::Filter) // the type button names the type only; the 12/24 dB switch beside it shows the slope
+        {
+            const std::array<const char*, 3> types { "Lowpass", "Bandpass", "Highpass" };
+            publishReadout(specification->name, filterEnabled ? juce::String(types[static_cast<std::size_t>(
+                                                                     juce::jlimit(0, 2, juce::roundToInt(physical()) / 2))])
+                                                               : juce::String("Bypass"));
+            return;
+        }
+        publishReadout(specification->name, displayText(physical()));
     }
     // Ctrl + click: a number goes to its middle (5 on a knob's 0-to-10 scale, 0 on a bipolar one; a whole-number
     // control to the lower middle value, Voices 1-8 to 4); a switch or a list goes back to its Init value.
@@ -1155,6 +1178,7 @@ private:
                                    safe->writePhysical(static_cast<float>((result - 1010) * 2 + juce::roundToInt(safe->physical()) % 2));
                                else if (result != 1000) safe->writePhysical(static_cast<float>(result - 1));
                                safe->updateValue();
+                               safe->announce(); // the readout shows the item just chosen
                            });
     }
     void showContextMenu()
@@ -2609,6 +2633,9 @@ private:
     void sectionMenu(const juce::String& title, const std::vector<std::string>& prefixes);
     void programMenu();
     void bankProgramMenu();
+    // The bank list toggles: a click on the name while it is open (or the click that just closed it) only closes it.
+    bool bankMenuOpen = false;
+    juce::uint32 bankMenuClosedAtMs = 0;
     // The wheels are the parameters performance.pitch_bend and performance.mod_wheel, so they can be automated.
     juce::RangedAudioParameter* wheelParameter(int wheel)
     {
@@ -3370,6 +3397,13 @@ void SynthAudioProcessorEditor::ClassicSurface::programMenu()
 // The 128 programs of the selected bank, in four columns of 32; the current one is ticked.
 void SynthAudioProcessorEditor::ClassicSurface::bankProgramMenu()
 {
+    if (bankMenuOpen)
+    {
+        juce::PopupMenu::dismissAllActiveMenus();
+        return;
+    }
+    if (juce::Time::getMillisecondCounter() - bankMenuClosedAtMs < 250) // this click is the one that closed it
+        return;
     constexpr int programsPerBank = 128, programsPerColumn = 32;
     const auto current = owner.getCurrentProgram();
     const auto first = current / programsPerBank * programsPerBank;
@@ -3381,8 +3415,13 @@ void SynthAudioProcessorEditor::ClassicSurface::bankProgramMenu()
         const auto program = first + offset;
         menu.addItem(1 + program, juce::String(offset + 1).paddedLeft('0', 3) + "  " + owner.getProgramName(program), true, program == current);
     }
+    bankMenuOpen = true;
     menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ClassicSurface>(this)](int result) {
-        if (safe == nullptr || result == 0)
+        if (safe == nullptr)
+            return;
+        safe->bankMenuOpen = false;
+        safe->bankMenuClosedAtMs = juce::Time::getMillisecondCounter();
+        if (result == 0)
             return;
         juce::String message;
         if (safe->owner.selectProgram(result - 1, message))
