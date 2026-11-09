@@ -76,11 +76,17 @@ ImportedProgram buildProgram(juce::AudioProcessorValueTreeState& parameters, con
     if (program.name.isEmpty())
         program.name = "Untitled";
 
-    auto state = prepareInitPresetState(parameters).state;
-    std::unordered_map<std::string, juce::ValueTree> byId;
-    for (auto child : state)
-        if (child.hasType("PARAM"))
-            byId.emplace(child.getProperty("id").toString().toStdString(), child);
+    // Every program starts from the same Init state; it is built once and copied (a bank builds hundreds of programs).
+    static const juce::ValueTree initState = prepareInitPresetState(parameters).state;
+    auto state = initState.createCopy();
+    // The Init state holds one PARAM child per spec in registry order, so a spec's index is its child's index.
+    const auto& specs = getParameterSpecs();
+    const auto childFor = [&state, &specs](const ParameterSpec& spec) {
+        const auto index = static_cast<int>(&spec - specs.data());
+        static const juce::Identifier idProperty { "id" };
+        auto child = state.getChild(index);
+        return child.isValid() && child.getProperty(idProperty).toString().compare(spec.id.c_str()) == 0 ? child : juce::ValueTree();
+    };
 
     auto mapped = mapPatch(patch);
     for (const auto& assignment : mapped.assignments)
@@ -91,8 +97,8 @@ ImportedProgram buildProgram(juce::AudioProcessorValueTreeState& parameters, con
             continue;
         }
         const auto* spec = findParameterSpec(assignment.parameterId);
-        const auto found = byId.find(assignment.parameterId);
-        if (spec == nullptr || found == byId.end())
+        auto found = spec != nullptr ? childFor(*spec) : juce::ValueTree();
+        if (!found.isValid())
         {
             program.rejected.push_back(assignment.parameterId + " (unregistered)");
             continue;
@@ -113,7 +119,8 @@ ImportedProgram buildProgram(juce::AudioProcessorValueTreeState& parameters, con
         {
             value = clampPhysicalParameterValue(*spec, assignment.value);
         }
-        found->second.setProperty("value", value, nullptr);
+        static const juce::Identifier valueProperty { "value" };
+        found.setProperty(valueProperty, value, nullptr);
     }
 
     auto programInfo = info;

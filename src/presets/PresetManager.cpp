@@ -1181,9 +1181,12 @@ PresetLoadResult prepareInitPresetState(juce::AudioProcessorValueTreeState& para
     PresetLoadResult result;
     auto state = juce::ValueTree(parameters.state.getType());
     resetStateToDefaults(state);
-    for (const auto& spec : getParameterSpecs())
-        if (spec.hasInit)
-            setKnownParameterValue(state, spec.id.c_str(), spec.initValue);
+    // resetStateToDefaults writes one PARAM child per spec, in registry order, so the Init value goes straight to the
+    // child at the same index (looking each one up by id made this quadratic: about 22 ms per call).
+    const auto& specs = getParameterSpecs();
+    for (std::size_t index = 0; index < specs.size(); ++index)
+        if (const auto& spec = specs[index]; spec.hasInit)
+            state.getChild(static_cast<int>(index)).setProperty("value", clampPhysicalParameterValue(spec, spec.initValue), nullptr);
     stampPreparedState(state, "Init");
 
     result.loaded = true;
@@ -1241,6 +1244,26 @@ PresetStateFingerprint fingerprintCurrentPresetState(const juce::AudioProcessorV
 PresetStateFingerprint fingerprintPresetState(const juce::ValueTree& state)
 {
     if (!state.isValid()) return {};
+    const auto& registry = getParameterSpecs();
+    // Fast path: a state written by this build has one PARAM child per spec, in registry order, so each value is read
+    // by index. Anything else (older or hand-edited states) goes through the lookup by id below.
+    if (state.getNumChildren() == static_cast<int>(registry.size()))
+    {
+        // Identifiers made once: building one from text looks it up in JUCE's shared string pool each time.
+        static const juce::Identifier paramType { "PARAM" }, idProperty { "id" }, valueProperty { "value" };
+        std::vector<float> physicalValues;
+        physicalValues.reserve(registry.size());
+        for (std::size_t index = 0; index < registry.size(); ++index)
+        {
+            const auto child = state.getChild(static_cast<int>(index));
+            const auto& spec = registry[index];
+            if (!child.hasType(paramType) || child.getProperty(idProperty).toString().compare(spec.id.c_str()) != 0)
+                break;
+            physicalValues.push_back(physicalValueFromStateValue(spec, child.getProperty(valueProperty)));
+        }
+        if (physicalValues.size() == registry.size())
+            return fingerprintRegistryValues(physicalValues);
+    }
     std::unordered_map<std::string, juce::var> values;
     values.reserve(static_cast<std::size_t>(state.getNumChildren()));
     for (const auto& child : state)
