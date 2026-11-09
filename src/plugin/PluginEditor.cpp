@@ -2793,10 +2793,10 @@ void SynthAudioProcessorEditor::ClassicSurface::envelope(const std::string& pref
     {
         caption(labels[static_cast<std::size_t>(i)], x + 14 + i * interval, y, interval, 12, 9);
         add(prefix + suffixes[static_cast<std::size_t>(i)], labels[static_cast<std::size_t>(i)], Style::Fader,
-            x + 14 + i * interval, y + 13, interval - 3, 72);
+            x + 14 + i * interval, y + 13, interval - 3, 70);
     }
     caption("10", x + 3, y + 14, 14, 10, 7);
-    caption("0", x + 3, y + 75, 14, 10, 7);
+    caption("0", x + 3, y + 73, 14, 10, 7);
 }
 void SynthAudioProcessorEditor::ClassicSurface::addDisplay(std::unique_ptr<ModulationDisplay> display, int x, int y, int width, int height)
 {
@@ -2907,7 +2907,7 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     oscillator(1, 32);
     oscillator(2, 538);
     const auto layer = "layer." + std::to_string(selectedPart + 1) + ".";
-    envelope(layer + "amp_env.", 376, 50, 154);
+    envelope(layer + "amp_env.", 380, 45, 154);
     action("v", 512, 33, 16, 12, [this, layer] { sectionMenu("Amplifier Envelope", { layer + "amp_env." }); }, false, "Amplifier envelope " + juce::String(selectedPart == 0 ? "A" : "B") + " menu");
 
     caption("OSC A", 39, 152, 33, 13, 8, amber);
