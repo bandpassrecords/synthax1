@@ -62,7 +62,6 @@ private:
     {
         std::array<float, renderBlockMaxSamples> left {};
         std::array<float, renderBlockMaxSamples> right {};
-        std::array<float, renderBlockMaxSamples> weight {};
         std::array<float, renderBlockMaxSamples> phaserCenterOffsetHz {};
         int endSample = 0; // as Voice::renderBlock returns it; -1 if the voice was idle
     };

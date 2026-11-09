@@ -237,19 +237,6 @@ void Voice::stopWithFade(int fadeSamples) noexcept
     state = VoiceState::Releasing;
 }
 
-float Voice::normalizationPowerWeight() const noexcept
-{
-    if (state == VoiceState::Idle)
-        return 0.0f;
-
-    if (stopFadeSamples <= 0 || stopFadeTotalSamples <= 0)
-        return 1.0f;
-
-    const auto fade = static_cast<float>(stopFadeSamples)
-        / static_cast<float>(std::max(1, stopFadeTotalSamples));
-    return fade * fade;
-}
-
 void Voice::reset() noexcept
 {
     state = VoiceState::Idle;
@@ -410,7 +397,6 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
     for (int i = 0; i < numSamples; ++i)
     {
         const auto sample = static_cast<std::size_t>(i);
-        output.weight[i] = isStopFading() ? normalizationPowerWeight() : 1.0f;
         const auto note = processGlide(parameters);
         const auto glidedVelocity = processVelocityGlide(parameters);
         std::array<float, layerCount> ampValues {};

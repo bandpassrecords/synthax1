@@ -83,13 +83,11 @@ struct VoiceModPlan
     void build(const TransModParameters& transMod) noexcept;
 };
 
-// Where a voice writes one block: its output, its weight in the output normalisation (taken before
-// each sample) and its phaser offset, one value per sample it renders.
+// Where a voice writes one block: its output and its phaser offset, one value per sample it renders.
 struct VoiceBlockOutput
 {
     float* left = nullptr;
     float* right = nullptr;
-    float* weight = nullptr;
     float* phaserCenterOffsetHz = nullptr;
 };
 
@@ -119,7 +117,6 @@ public:
     bool isStopFading() const noexcept { return stopFadeSamples > 0 && stopFadeTotalSamples > 0; }
     int getMidiNote() const noexcept { return midiNote; }
     int getUnisonIndex() const noexcept { return unisonIndex; }
-    float normalizationPowerWeight() const noexcept;
     VoiceSnapshot snapshot() const noexcept;
 
 private:

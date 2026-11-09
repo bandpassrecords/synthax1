@@ -720,23 +720,6 @@ inline float inverseSqrtForCount(int count) noexcept
     return values[static_cast<std::size_t>(std::clamp(count, 0, static_cast<int>(values.size()) - 1))];
 }
 
-inline float inverseSqrtForWeight(float weight) noexcept
-{
-    const auto safeWeight = std::isfinite(weight) ? weight : 1.0f;
-    const auto clampedWeight = std::clamp(safeWeight, 0.0f, 32.0f);
-    if (clampedWeight <= 0.0f)
-        return 0.0f;
-
-    if (clampedWeight <= 1.0f)
-        return 1.0f;
-
-    const auto lowerIndex = static_cast<int>(clampedWeight);
-    const auto fraction = clampedWeight - static_cast<float>(lowerIndex);
-    const auto upperIndex = std::min(lowerIndex + 1, 32);
-    const auto lower = inverseSqrtForCount(lowerIndex);
-    return lower + (inverseSqrtForCount(upperIndex) - lower) * fraction;
-}
-
 inline constexpr float decibelGainTableMinDb = -96.0f;
 inline constexpr float decibelGainTableMaxDb = 36.0f;
 inline constexpr float decibelGainTableStepDb = 0.5f;

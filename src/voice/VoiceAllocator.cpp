@@ -377,17 +377,19 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
         }
         lanes.endSample = voice.renderBlock(parameters, modPlan, useMonoLfo ? monoValues.data() : nullptr,
                                             useMonoLfo2 ? monoValues2.data() : nullptr, numSamples,
-                                            { lanes.left.data(), lanes.right.data(), lanes.weight.data(),
-                                              lanes.phaserCenterOffsetHz.data() });
+                                            { lanes.left.data(), lanes.right.data(), lanes.phaserCenterOffsetHz.data() });
         anyVoiceEnds = anyVoiceEnds || lanes.endSample < numSamples;
     }
 
     // Mix the lanes sample by sample in the active-list order, removing a voice where it ends, so the
-    // sums (and the list) come out exactly as when every voice rendered one sample at a time.
+    // sums (and the list) come out exactly as when every voice rendered one sample at a time. Voices add
+    // up plainly, as in the reference: overlapping notes (release tails included) are louder together.
+    // MEASURED (the reference synth 3.0.7.3, research/parity/arte): with no filter, modulation or effects, the
+    // level of a phrase of overlapping notes rises as their tails add (-22 to -12 dB); dividing the sum by the
+    // square root of the active voice count held it flat and ducked every tail when a note began.
     const auto mixSample = [this, outLeft, outRight, phaserCenterOffsetsHz](int i) noexcept {
         const auto sample = static_cast<std::size_t>(i);
         StereoFrame frame;
-        auto normalizationPower = 0.0f;
         std::uint64_t selectedTriggerOrder = 0;
         auto selectedUnisonIndex = maxVoiceSlots;
         for (int activeIndex = 0; activeIndex < activeVoiceSlotCount;)
@@ -404,7 +406,6 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
                 removeActiveVoiceAt(activeIndex);
                 continue;
             }
-            normalizationPower += lanes.weight[sample];
             frame.left += lanes.left[sample];
             frame.right += lanes.right[sample];
             if (lanes.endSample == i)
@@ -423,12 +424,6 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
             }
             ++activeIndex;
         }
-        if (normalizationPower > 1.0f)
-        {
-            const auto compensation = inverseSqrtForWeight(normalizationPower);
-            frame.left *= compensation;
-            frame.right *= compensation;
-        }
         outLeft[i] = frame.left;
         outRight[i] = frame.right;
         if (phaserCenterOffsetsHz != nullptr) phaserCenterOffsetsHz[i] = frame.phaserCenterOffsetHz;
@@ -442,7 +437,6 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
 
     // No voice ends in this block: the list order holds, so each voice adds its whole lane in turn
     // (the same additions in the same order), and the phaser follows one voice throughout.
-    std::array<float, renderBlockMaxSamples> power {};
     std::fill(outLeft, outLeft + numSamples, 0.0f);
     std::fill(outRight, outRight + numSamples, 0.0f);
     std::uint64_t selectedTriggerOrder = 0;
@@ -455,7 +449,6 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
         for (int i = 0; i < numSamples; ++i)
         {
             const auto sample = static_cast<std::size_t>(i);
-            power[sample] += lanes.weight[sample];
             outLeft[i] += lanes.left[sample];
             outRight[i] += lanes.right[sample];
         }
@@ -469,18 +462,9 @@ void VoiceAllocator::renderBlock(const SynthParameters& parameters, float* outLe
             selected = &lanes;
         }
     }
-    for (int i = 0; i < numSamples; ++i)
-    {
-        const auto sample = static_cast<std::size_t>(i);
-        if (power[sample] > 1.0f)
-        {
-            const auto compensation = inverseSqrtForWeight(power[sample]);
-            outLeft[i] *= compensation;
-            outRight[i] *= compensation;
-        }
-        if (phaserCenterOffsetsHz != nullptr)
-            phaserCenterOffsetsHz[i] = selected != nullptr ? selected->phaserCenterOffsetHz[sample] : 0.0f;
-    }
+    if (phaserCenterOffsetsHz != nullptr)
+        for (int i = 0; i < numSamples; ++i)
+            phaserCenterOffsetsHz[i] = selected != nullptr ? selected->phaserCenterOffsetHz[static_cast<std::size_t>(i)] : 0.0f;
 }
 
 void VoiceAllocator::syncSecondMonoLfoConfig(const SynthParameters& parameters) noexcept
