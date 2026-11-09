@@ -78,11 +78,13 @@ Modulation includes the original performance/miscellaneous sources and signed de
 
 The modulation row is no longer a copy of the classic panels. These requirements replace the two-route limit and the fixed-size panels; they do not change the sound of any existing patch.
 
-- The window opens 20% larger and the modulation section is taller than the classic layout. The rest of the surface is unchanged.
+- The window opens 20% larger and the modulation section is somewhat taller than the classic layout, to fit the curve displays. The rest of the surface is unchanged.
 - Each modulation envelope draws its curve (the real stage shapes) with draggable handles and also shows attack, decay, sustain and release as knobs.
 - Each LFO draws its wave with gain, offset and rate on the display. The Step wave is a curve the user draws: click or drag across its columns, with 2 to 16 steps.
 - A source can have any number of destinations. A route is the depth of one destination on the source's slot, so every destination of every slot is its own saved, automatable parameter. The classic destination and amount pairs stay valid: they are read, listed and edited like the new routes, and old presets and banks produce the same sound.
-- A **modulation matrix** lists every route (source, destination, amount) with add, change and remove. Dragging a source handle onto a knob that can be modulated adds a route to it; modulated knobs show a ring in the source colour.
+- Each source panel shows its two classic routes as an amount knob beside a destination box, as on the classic surface. The MISC panel shows, for each of slots 5 to 8, a source box beside its two routes.
+- Routes beyond those boxes (depths) are counted by a "+N" badge in the panel header. The badge opens the full list of that panel's routes (source, destination, amount) with add, change and remove, so no route is hidden.
+- Dragging a source handle onto a knob that can be modulated fills the first free route box of that source, or adds a depth when both boxes are in use. Modulated knobs show a ring in the source colour.
 - The first four slots belong to Mod Env 1, Mod Env 2, LFO 1 and LFO 2. Slots 5 to 8 take any other source. More slots and destinations MAY be added later; new parameters MUST be appended so released parameter IDs and route choice indices keep their meaning.
 
 ### Arpeggiator

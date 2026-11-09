@@ -16,7 +16,7 @@
 namespace
 {
 constexpr int canvasWidth = 908;
-constexpr int modulationExtra = 87; // the modulation section is taller than the original layout; everything under it moves down
+constexpr int modulationExtra = 51; // the modulation section is taller than the original layout; everything under it moves down
 constexpr int canvasHeight = 591 + modulationExtra;
 const auto graphite = juce::Colour(0xff292b2c);
 const auto silver = juce::Colour(0xffd0d4d2);
@@ -107,6 +107,36 @@ void setModulationAmount(SynthAudioProcessor& owner, int slot, int destinationIn
         return;
     activateModulationSlot(owner, slot);
     setParameterValue(owner, id, juce::jlimit(-1.0f, 1.0f, amount) * modulationDepthScale(owner, id));
+}
+
+// Every modulation destination (result id = idBase + catalog index), grouped so the list stays short.
+void buildDestinationMenu(juce::PopupMenu& menu, int idBase, int current)
+{
+    const auto& catalog = synth::modulationDestinationCatalog();
+    juce::PopupMenu oscillators, filters, parts, lfos;
+    std::vector<std::pair<int, juce::String>> general;
+    for (int i = 0; i < static_cast<int>(catalog.size()); ++i)
+    {
+        const juce::String label(catalog[static_cast<std::size_t>(i)].label);
+        const auto ticked = i == current;
+        if (label.length() > 3 && (label[0] == 'A' || label[0] == 'B') && (label[1] == '1' || label[1] == '2') && label[2] == ' ')
+            oscillators.addItem(idBase + i, label, true, ticked);
+        else if (label.startsWith("Filter ") && label.length() > 8 && label[7] >= 'A' && label[7] <= 'B')
+            filters.addItem(idBase + i, label, true, ticked);
+        else if (label.startsWith("Part "))
+            parts.addItem(idBase + i, label, true, ticked);
+        else if (label.startsWith("LFO "))
+            lfos.addItem(idBase + i, label, true, ticked);
+        else
+            general.emplace_back(i, label);
+    }
+    for (const auto& [i, label] : general)
+        menu.addItem(idBase + i, label, true, i == current);
+    menu.addSeparator();
+    menu.addSubMenu("Oscillators", oscillators);
+    menu.addSubMenu("Filters", filters);
+    menu.addSubMenu("Parts", parts);
+    menu.addSubMenu("LFOs", lfos);
 }
 
 // Menus open at the mouse, wherever the editor sits and however it is scaled.
@@ -662,8 +692,14 @@ public:
                                                          : juce::String(physical(), 1);
                 if (id.rfind("arp.step.", 0) == 0 && id.ends_with(".velocity"))
                     value = juce::String(juce::roundToInt(physical() * 127));
-                drawText(g, value, getLocalBounds().reduced(3, 0), style == Style::Route ? 8.7f : 10.0f,
-                         displayInk, juce::Justification::centred, false, true);
+                if (style == Style::Route)
+                {
+                    g.setColour(displayInk);
+                    g.setFont(font(8.7f, false, true));
+                    g.drawFittedText(value, getLocalBounds().reduced(3, 0), juce::Justification::centred, 1, 0.6f);
+                }
+                else
+                    drawText(g, value, getLocalBounds().reduced(3, 0), 10.0f, displayInk, juce::Justification::centred, false, true);
             }
             return;
         }
@@ -929,11 +965,24 @@ private:
     {
         if (slot < 1 || slot > synth::transModSlotCount || modulationDestination < 1)
             return;
-        // A route that already points here keeps its amount; a new one starts at half.
-        if (std::abs(modulationAmount(owner, slot, modulationDestination - 1)) < 0.001f)
-            setModulationAmount(owner, slot, modulationDestination - 1, 0.5f);
-        else
+        // A route that already points here keeps its amount. Otherwise the first free route box of the slot takes it, and a
+        // depth is added when both boxes are in use. A new route starts at half.
+        const auto routeId = [slot](int route, const char* suffix) {
+            return "transmod." + std::to_string(slot) + ".route." + std::to_string(route) + "." + suffix;
+        };
+        const auto boxDestination = [this, &routeId](int route) { return juce::roundToInt(readParameterValue(owner, routeId(route, "destination"))); };
+        const auto alreadyRouted = boxDestination(1) == modulationDestination || boxDestination(2) == modulationDestination
+            || std::abs(modulationAmount(owner, slot, modulationDestination - 1)) >= 0.001f;
+        if (alreadyRouted)
             activateModulationSlot(owner, slot);
+        else if (const auto freeBox = boxDestination(1) == 0 ? 1 : (boxDestination(2) == 0 ? 2 : 0); freeBox > 0)
+        {
+            activateModulationSlot(owner, slot);
+            setParameterValue(owner, routeId(freeBox, "destination"), static_cast<float>(modulationDestination));
+            setParameterValue(owner, routeId(freeBox, "amount"), 0.5f);
+        }
+        else
+            setModulationAmount(owner, slot, modulationDestination - 1, 0.5f);
         publishReadout(modulationName(slot), "-> " + getName());
     }
     bool isToggleControl() const noexcept
@@ -1158,6 +1207,11 @@ private:
         else if (const auto* layout = choiceLayoutFor(id))
         {
             addChoiceItems(menu, *layout, 1, juce::roundToInt(physical()));
+        }
+        else if (id.rfind("transmod.", 0) == 0 && id.ends_with(".destination"))
+        {
+            menu.addItem(1, "None", true, juce::roundToInt(physical()) == 0);
+            buildDestinationMenu(menu, 2, juce::roundToInt(physical()) - 1); // choice = catalog index + 1
         }
         else
         {
@@ -2390,35 +2444,6 @@ private:
         rebuild();
         repaint();
     }
-    // Every destination, grouped so the list stays short.
-    static void buildDestinationMenu(juce::PopupMenu& menu, int idBase, int current)
-    {
-        const auto& catalog = synth::modulationDestinationCatalog();
-        juce::PopupMenu oscillators, filters, parts, lfos;
-        std::vector<std::pair<int, juce::String>> general;
-        for (int i = 0; i < static_cast<int>(catalog.size()); ++i)
-        {
-            const juce::String label(catalog[static_cast<std::size_t>(i)].label);
-            const auto ticked = i == current;
-            if (label.length() > 3 && (label[0] == 'A' || label[0] == 'B') && (label[1] == '1' || label[1] == '2') && label[2] == ' ')
-                oscillators.addItem(idBase + i, label, true, ticked);
-            else if (label.startsWith("Filter ") && label.length() > 8 && label[7] >= 'A' && label[7] <= 'B')
-                filters.addItem(idBase + i, label, true, ticked);
-            else if (label.startsWith("Part "))
-                parts.addItem(idBase + i, label, true, ticked);
-            else if (label.startsWith("LFO "))
-                lfos.addItem(idBase + i, label, true, ticked);
-            else
-                general.emplace_back(i, label);
-        }
-        for (const auto& [i, label] : general)
-            menu.addItem(idBase + i, label, true, i == current);
-        menu.addSeparator();
-        menu.addSubMenu("Oscillators", oscillators);
-        menu.addSubMenu("Filters", filters);
-        menu.addSubMenu("Parts", parts);
-        menu.addSubMenu("LFOs", lfos);
-    }
     void chooseDestination(Row row)
     {
         juce::PopupMenu menu;
@@ -2531,6 +2556,68 @@ private:
     int draggedRow = -1;
     juce::RangedAudioParameter* gestureParameter = nullptr;
 };
+
+// "+N" in a panel header: the routes of these slots beyond the two classic boxes (depths, set by a drag or the list).
+// A click opens the full list of the slots' routes, where they can be changed or removed. Hidden when there are none.
+class ModulationOverflowBadge final : public ModulationDisplay, public juce::SettableTooltipClient
+{
+public:
+    ModulationOverflowBadge(SynthAudioProcessor& processor, std::vector<int> slotNumbers, ReadoutCallback readoutCallback)
+        : owner(processor), slots(std::move(slotNumbers)), readout(std::move(readoutCallback))
+    {
+        setTitle("More modulation routes");
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        count = extraRoutes();
+        describe();
+    }
+    void refresh() override
+    {
+        const auto next = extraRoutes();
+        if (next == count)
+            return;
+        count = next;
+        describe();
+        repaint();
+    }
+    bool hitTest(int, int) override { return count > 0; }
+    void paint(juce::Graphics& g) override
+    {
+        if (count == 0)
+            return;
+        g.setColour(modulationColour(slots.front()).withAlpha(0.85f));
+        g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f);
+        drawText(g, "+" + juce::String(count), getLocalBounds(), 8.0f, juce::Colour(0xff0b0e0f), juce::Justification::centred, true);
+    }
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        auto* parent = getTopLevelComponent();
+        if (count == 0 || !event.mouseWasClicked() || parent == nullptr)
+            return;
+        const auto manySlots = slots.size() > 1;
+        auto list = std::make_unique<ModulationRouteList>(owner, slots, manySlots, readout);
+        list->setSize(manySlots ? 200 : 172, manySlots ? 170 : 110);
+        juce::CallOutBox::launchAsynchronously(std::move(list), parent->getLocalArea(this, getLocalBounds()), parent);
+    }
+
+private:
+    int extraRoutes() const
+    {
+        const auto destinations = static_cast<int>(synth::modulationDestinationCatalog().size());
+        int total = 0;
+        for (const auto slot : slots)
+            for (int destination = 0; destination < destinations; ++destination)
+                total += std::abs(modulationAmount(owner, slot, destination)) > 0.0001f ? 1 : 0;
+        return total;
+    }
+    void describe()
+    {
+        setTooltip(juce::String(count) + (count == 1 ? " more route" : " more routes") + " beyond the boxes. Click to see every route.");
+    }
+    SynthAudioProcessor& owner;
+    std::vector<int> slots;
+    ReadoutCallback readout;
+    int count = 0;
+};
 } // namespace
 
 class SynthAudioProcessorEditor::ClassicSurface final : public juce::Component, public juce::DragAndDropContainer, private juce::Timer
@@ -2641,8 +2728,12 @@ private:
     static constexpr int modulationPanelWidth = 172;
     static constexpr int modulationPanelTop = 352;
     static int modulationPanelX(int index) { return 31 + index * 176; }
+    static constexpr int modulationPanelHeight = 206;
+    static constexpr int miscPanelWidth = 878 - (31 + 4 * 176) + 1;
+    static int miscSourceTop(int slot) { return modulationPanelTop + 21 + (slot - 5) * 45; }
     void modulationEnvelope(const std::string& prefix, int slot, int x);
     void modulationHandle(int slot, int x, int y);
+    void modulationOverflow(std::vector<int> slots, int x, int y);
     void addDisplay(std::unique_ptr<ModulationDisplay> display, int x, int y, int width, int height);
     void oscillator(int slot, int x);
     void modulationRoutes(int slot, int x, int y, int width);
@@ -2808,19 +2899,27 @@ void SynthAudioProcessorEditor::ClassicSurface::modulationEnvelope(const std::st
 {
     addDisplay(std::make_unique<EnvelopeCurveDisplay>(owner, prefix, slot,
                                                       [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
-               x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 88);
+               x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 80);
     const std::array<std::string, 4> suffixes { "attack_ms", "decay_ms", "sustain", "release_ms" };
     const std::array<juce::String, 4> labels { "ATTACK", "DECAY", "SUSTAIN", "RELEASE" };
     for (std::size_t i = 0; i < 4; ++i)
-        add(prefix + suffixes[i], labels[i], Style::Knob, x + 4 + static_cast<int>(i) * 41, modulationPanelTop + 109, 40, 53);
+        add(prefix + suffixes[i], labels[i], Style::Knob, x + 4 + static_cast<int>(i) * 41, modulationPanelTop + 101, 40, 53);
+    modulationRoutes(slot, x, modulationPanelTop + 156, modulationPanelWidth);
     action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
            [this, slot, prefix] { sectionMenu("Modulation Envelope", { prefix, "transmod." + std::to_string(slot) + "." }); }, false,
            "Modulation envelope " + juce::String(slot) + " menu");
     modulationHandle(slot, x + modulationPanelWidth - 38, modulationPanelTop + 2);
+    modulationOverflow({ slot }, x + 6, modulationPanelTop + 3);
 }
 void SynthAudioProcessorEditor::ClassicSurface::modulationHandle(int slot, int x, int y)
 {
     addDisplay(std::make_unique<ModulationSourceHandle>(owner, slot), x, y, 13, 13);
+}
+void SynthAudioProcessorEditor::ClassicSurface::modulationOverflow(std::vector<int> slots, int x, int y)
+{
+    addDisplay(std::make_unique<ModulationOverflowBadge>(owner, std::move(slots),
+                                                         [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
+               x, y, 22, 12);
 }
 void SynthAudioProcessorEditor::ClassicSurface::oscillator(int slot, int x)
 {
@@ -2853,8 +2952,8 @@ void SynthAudioProcessorEditor::ClassicSurface::modulationRoutes(int slot, int x
     for (int route = 1; route <= 2; ++route)
     {
         const auto routePrefix = prefix + std::to_string(route) + ".";
-        add(routePrefix + "amount", "Amount", Style::SmallKnob, x + 8, y + (route - 1) * 24, 20, 21);
-        add(routePrefix + "destination", "Destination", Style::Route, x + 32, y + 4 + (route - 1) * 24, width - 48, 16);
+        add(routePrefix + "amount", "Amount", Style::SmallKnob, x + 6, y + (route - 1) * 24, 20, 21);
+        add(routePrefix + "destination", "Destination", Style::Route, x + 30, y + 3 + (route - 1) * 24, width - 36, 16);
     }
 }
 void SynthAudioProcessorEditor::ClassicSurface::lfo(int number, int x)
@@ -2878,6 +2977,8 @@ void SynthAudioProcessorEditor::ClassicSurface::lfo(int number, int x)
     action("v", x + modulationPanelWidth - 19, modulationPanelTop + 3, 15, 12,
            [this, prefix, number] { sectionMenu("LFO", { prefix, "transmod." + std::to_string(number + 2) + "." }); }, false, "LFO " + juce::String(number) + " menu");
     modulationHandle(number + 2, x + modulationPanelWidth - 38, modulationPanelTop + 2);
+    modulationOverflow({ number + 2 }, x + 6, modulationPanelTop + 3);
+    modulationRoutes(number + 2, x, modulationPanelTop + 156, modulationPanelWidth);
 }
 
 void SynthAudioProcessorEditor::ClassicSurface::buildControls()
@@ -2944,12 +3045,20 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     modulationEnvelope("mod_env.2.", 2, modulationPanelX(1));
     lfo(1, modulationPanelX(2));
     lfo(2, modulationPanelX(3));
-    const auto readout = [this](const juce::String& name, const juce::String& value) { announce(name, value); };
-    for (int slot = 1; slot <= 4; ++slot)
-        addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { slot }, false, readout),
-                   modulationPanelX(slot - 1) + 3, modulationPanelTop + 171, modulationPanelWidth - 6, 68);
-    addDisplay(std::make_unique<ModulationRouteList>(owner, std::vector<int> { 5, 6, 7, 8 }, true, readout),
-               modulationPanelX(4) + 3, modulationPanelTop + 19, modulationPanelWidth - 6 - 29, 220);
+    for (int slot = 5; slot <= 8; ++slot)
+    {
+        const auto x = modulationPanelX(4);
+        const auto y = miscSourceTop(slot);
+        caption("SOURCE", x + 4, y + 3, 48, 10, 7);
+        add("transmod." + std::to_string(slot) + ".source", "Source " + juce::String(slot - 4), Style::Route, x + 4, y + 14, 48, 16);
+        for (int route = 1; route <= 2; ++route)
+        {
+            const auto routePrefix = "transmod." + std::to_string(slot) + ".route." + std::to_string(route) + ".";
+            add(routePrefix + "amount", "Amount", Style::SmallKnob, x + 54, y + (route - 1) * 22, 20, 21);
+            add(routePrefix + "destination", "Destination", Style::Route, x + 76, y + 3 + (route - 1) * 22, miscPanelWidth - 80, 16);
+        }
+    }
+    modulationOverflow({ 5, 6, 7, 8 }, modulationPanelX(4) + 6, modulationPanelTop + 3);
     constexpr int low = modulationExtra;
     caption("BEND", 33, 518 + low, 34, 11, 8);
     caption("RANGE", 32, 529 + low, 35, 11, 8);
@@ -3128,11 +3237,15 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     panel(g, { 31, 134, 219, 121 }, "FILTER " + juce::String(selectedPart == 0 ? "A" : "B"), true, selectedPart);
     panel(g, { 31, 257, 219, 91 }, "FILTER CONTROL");
     panel(g, { 658, 134, 220, 129 }, "MIXER");
-    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, 242 }, "MOD ENV 1");
-    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, 242 }, "MOD ENV 2");
-    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, 242 }, "LFO 1");
-    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, 242 }, "LFO 2");
-    panel(g, { modulationPanelX(4), modulationPanelTop, 878 - modulationPanelX(4) + 1, 242 }, "MISC");
+    panel(g, { modulationPanelX(0), modulationPanelTop, modulationPanelWidth, modulationPanelHeight }, "MOD ENV 1");
+    panel(g, { modulationPanelX(1), modulationPanelTop, modulationPanelWidth, modulationPanelHeight }, "MOD ENV 2");
+    panel(g, { modulationPanelX(2), modulationPanelTop, modulationPanelWidth, modulationPanelHeight }, "LFO 1");
+    panel(g, { modulationPanelX(3), modulationPanelTop, modulationPanelWidth, modulationPanelHeight }, "LFO 2");
+    panel(g, { modulationPanelX(4), modulationPanelTop, miscPanelWidth, modulationPanelHeight }, "MISC");
+    g.setColour(juce::Colours::black.withAlpha(0.35f));
+    for (int slot = 6; slot <= 8; ++slot)
+        g.drawHorizontalLine(miscSourceTop(slot) - 2, static_cast<float>(modulationPanelX(4) + 6),
+                             static_cast<float>(modulationPanelX(4) + miscPanelWidth - 6));
 
     // The LCD bezel has nested machined edges surrounding the pale blue screen.
     auto bezel = juce::Rectangle<float>(255, 134, 399, 214);
