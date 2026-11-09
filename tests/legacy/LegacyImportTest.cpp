@@ -191,7 +191,7 @@ void checkLibrary()
     store.set(first->idOf(one), { true, 4, "keep" });
     const synth::LibraryUserStore reopened(temp / "user.json");
     const auto data = reopened.get(first->idOf(one));
-    if (!data.favourite || data.rating != 4 || data.notes != "keep")
+    if (!data.favorite || data.rating != 4 || data.notes != "keep")
         fail("library: user data did not survive a reload");
     std::filesystem::remove_all(temp);
 }

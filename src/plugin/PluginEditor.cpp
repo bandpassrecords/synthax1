@@ -2241,6 +2241,7 @@ public:
     ~ClassicSurface() override
     {
         if (activeKey >= 0) owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, activeKey));
+        if (previewSounding) owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, 60));
         endWheelGesture();
     }
     void paint(juce::Graphics& g) override;
@@ -2250,6 +2251,12 @@ public:
     // Ctrl+Z undoes and Ctrl+Y (or Ctrl+Shift+Z) redoes parameter edits, without limit.
     bool keyPressed(const juce::KeyPress& key) override
     {
+        // Up and down step through the programs of the selected bank (not while the browser is open over the surface).
+        if ((key == juce::KeyPress::upKey || key == juce::KeyPress::downKey) && browserPanel == nullptr)
+        {
+            stepProgram(key == juce::KeyPress::downKey ? 1 : -1);
+            return true;
+        }
         const auto control = key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown();
         if (!control)
             return false;
@@ -2324,6 +2331,7 @@ private:
     void lcdControls();
     void sectionMenu(const juce::String& title, const std::vector<std::string>& prefixes);
     void programMenu();
+    void bankProgramMenu();
     // The wheels are the parameters performance.pitch_bend and performance.mod_wheel, so they can be automated.
     juce::RangedAudioParameter* wheelParameter(int wheel)
     {
@@ -2352,7 +2360,11 @@ private:
     std::unique_ptr<juce::Component> browserPanel;
     void renameProgram();
     void loadFile(bool bank);
-    void saveFile(bool bank);
+    void saveFile(bool bank, std::function<void()> afterSave = {});
+    void stepProgram(int direction);
+    void previewProgram();
+    int previewSerial = 0;
+    bool previewSounding = false;
     void writeParameter(const std::string& id, float physical);
     void announce(const juce::String& name, const juce::String& value);
     void timerCallback() override;
@@ -2608,10 +2620,10 @@ void SynthAudioProcessorEditor::ClassicSurface::lcdControls()
     for (int bank = 0; bank < 4; ++bank)
         action(juce::String(bank + 1), 286 + bank * 18, 160, 17, 18, [this, bank] {
             juce::String message;
-            owner.selectProgram(bank * 128 + owner.getCurrentProgram() % 128, message);
+            if (owner.selectProgram(bank * 128 + owner.getCurrentProgram() % 128, message)) previewProgram();
             announce("Program", message); }, true, "Program bank " + juce::String(bank + 1), true)->setSelected(owner.getCurrentProgram() / 128 == bank);
-    action("<", 591, 160, 15, 18, [this] { juce::String message; owner.previousProgram(message); announce("Program", message); }, true, "Previous program");
-    action(">", 607, 160, 15, 18, [this] { juce::String message; owner.nextProgram(message); announce("Program", message); }, true, "Next program");
+    action("<", 591, 160, 15, 18, [this] { juce::String message; if (owner.previousProgram(message)) previewProgram(); announce("Program", message); }, true, "Previous program");
+    action(">", 607, 160, 15, 18, [this] { juce::String message; if (owner.nextProgram(message)) previewProgram(); announce("Program", message); }, true, "Next program");
     action("MENU", 286, 180, 85, 17, [this] { programMenu(); }, true, "Program menu");
     action("list", 569, 161, 17, 16, [this] { openPresetBrowser(); }, true, "Preset browser");
     const std::array<juce::String, 8> names { "ARPEG", "DISTORT", "PHASER", "CHORUS", "EQ", "DELAY", "REVERB", "COMPRESS" };
@@ -2917,7 +2929,14 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDown(const juce::MouseEvent
             mouseDrag(event);
         }
     }
-    if (juce::Rectangle<int>(358, 160, 232, 18).contains(event.position.toInt())) programMenu();
+    // The preset name lists the programs of the selected bank; a right click there still gives the program menu (also under MENU).
+    if (juce::Rectangle<int>(358, 160, 232, 18).contains(event.position.toInt()))
+    {
+        if (event.mods.isPopupMenu())
+            programMenu();
+        else
+            bankProgramMenu();
+    }
 }
 void SynthAudioProcessorEditor::ClassicSurface::mouseDrag(const juce::MouseEvent& event)
 {
@@ -3052,6 +3071,31 @@ void SynthAudioProcessorEditor::ClassicSurface::programMenu()
                            if (message.isNotEmpty()) safe->announce("Program", message);
                        });
 }
+// The 128 programs of the selected bank, in four columns of 32; the current one is ticked.
+void SynthAudioProcessorEditor::ClassicSurface::bankProgramMenu()
+{
+    constexpr int programsPerBank = 128, programsPerColumn = 32;
+    const auto current = owner.getCurrentProgram();
+    const auto first = current / programsPerBank * programsPerBank;
+    juce::PopupMenu menu;
+    for (int offset = 0; offset < programsPerBank && first + offset < owner.getNumPrograms(); ++offset)
+    {
+        if (offset > 0 && offset % programsPerColumn == 0)
+            menu.addColumnBreak();
+        const auto program = first + offset;
+        menu.addItem(1 + program, juce::String(offset + 1).paddedLeft('0', 3) + "  " + owner.getProgramName(program), true, program == current);
+    }
+    menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<ClassicSurface>(this)](int result) {
+        if (safe == nullptr || result == 0)
+            return;
+        juce::String message;
+        if (safe->owner.selectProgram(result - 1, message))
+            safe->previewProgram();
+        if (message.isNotEmpty())
+            safe->announce("Program", message);
+    });
+}
+
 void SynthAudioProcessorEditor::ClassicSurface::renameProgram()
 {
     const auto programIndex = owner.getCurrentProgram();
@@ -3084,19 +3128,82 @@ void SynthAudioProcessorEditor::ClassicSurface::loadFile(bool bank)
                                  safe->announce("Load", message);
                              });
 }
-void SynthAudioProcessorEditor::ClassicSurface::saveFile(bool bank)
+// Moves to the next or previous program of the selected bank (wrapping inside it). An edited program asks first:
+// save it as a preset, discard the edits, or stay.
+void SynthAudioProcessorEditor::ClassicSurface::stepProgram(int direction)
+{
+    constexpr int programsPerBank = 128;
+    const auto current = owner.getCurrentProgram();
+    const auto first = current / programsPerBank * programsPerBank;
+    const auto target = first + (current - first + direction + programsPerBank) % programsPerBank;
+    const auto step = [safe = juce::Component::SafePointer<ClassicSurface>(this), target] {
+        if (safe == nullptr)
+            return;
+        juce::String message;
+        if (safe->owner.selectProgram(target, message))
+            safe->previewProgram();
+        safe->announce("Program", message);
+    };
+    if (!owner.getPresetWorkflowSnapshot().dirty)
+    {
+        step();
+        return;
+    }
+    auto ownedWindow = std::make_unique<juce::AlertWindow>("Save changes?",
+                                                           "\"" + owner.getCurrentPresetName() + "\" has been edited. Save it before moving on?",
+                                                           juce::MessageBoxIconType::QuestionIcon);
+    ownedWindow->addButton("Save...", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    ownedWindow->addButton("Don't save", 2);
+    ownedWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    ownedWindow->enterModalState(true, juce::ModalCallbackFunction::create([safe = juce::Component::SafePointer<ClassicSurface>(this), step](int result) {
+                                     if (safe == nullptr || result == 0)
+                                         return;
+                                     if (result == 1)
+                                     {
+                                         safe->saveFile(false, step); // moves on once the preset is saved
+                                         return;
+                                     }
+                                     juce::String message;
+                                     safe->owner.resetCurrentPreset(message); // the edits are dropped, not kept in the slot
+                                     step();
+                                 }),
+                                 true);
+    ownedWindow.release(); // JUCE owns the modal window until its callback completes.
+}
+
+// With PLAY PREVIEW on (the browser's switch), a program chosen on the surface plays middle C for a moment, as in the browser.
+void SynthAudioProcessorEditor::ClassicSurface::previewProgram()
+{
+    if (!synth::readLibrarySettings().previewOnSelect)
+        return;
+    if (previewSounding)
+        owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, 60));
+    owner.submitUiMidiMessage(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)));
+    previewSounding = true;
+    const auto serial = ++previewSerial;
+    juce::Timer::callAfterDelay(1600, [safe = juce::Component::SafePointer<ClassicSurface>(this), serial] {
+        if (safe == nullptr || serial != safe->previewSerial) // a newer preview owns the note now
+            return;
+        safe->owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, 60));
+        safe->previewSounding = false;
+    });
+}
+
+void SynthAudioProcessorEditor::ClassicSurface::saveFile(bool bank, std::function<void()> afterSave)
 {
     fileChooser = std::make_unique<juce::FileChooser>(bank ? "Save program bank" : "Save preset",
                                                       owner.getUserPresetDirectory().getChildFile(owner.getCurrentPresetName() + (bank ? ".Synthax1Bank" : ".Synthax1Preset")),
                                                       bank ? "*.Synthax1Bank;*.fxb;*.fxp" : "*.Synthax1Preset");
     fileChooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                  | juce::FileBrowserComponent::warnAboutOverwriting,
-                             [safe = juce::Component::SafePointer<ClassicSurface>(this), bank](const juce::FileChooser& chooser) {
+                             [safe = juce::Component::SafePointer<ClassicSurface>(this), bank, afterSave](const juce::FileChooser& chooser) {
                                  if (safe == nullptr || chooser.getResult() == juce::File {}) return;
                                  juce::String message;
-                                 if (bank) safe->owner.saveProgramBank(chooser.getResult(), true, message);
-                                 else safe->owner.savePresetFile(chooser.getResult(), safe->owner.getCurrentPresetName(), message);
+                                 const auto saved = bank ? safe->owner.saveProgramBank(chooser.getResult(), true, message)
+                                                         : safe->owner.savePresetFile(chooser.getResult(), safe->owner.getCurrentPresetName(), message);
                                  safe->announce("Save", message);
+                                 if (saved && afterSave)
+                                     afterSave();
                              });
 }
 

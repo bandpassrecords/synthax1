@@ -663,7 +663,7 @@ LibraryUserData LibraryUserStore::get(const std::string& id) const
 
 void LibraryUserStore::set(const std::string& id, const LibraryUserData& data)
 {
-    if (!data.favourite && data.rating == 0 && data.notes.empty())
+    if (!data.favorite && data.rating == 0 && data.notes.empty())
         values.erase(id);
     else
         values[id] = data;
@@ -678,7 +678,8 @@ void LibraryUserStore::load()
             if (const auto* item = property.value.getDynamicObject())
             {
                 LibraryUserData data;
-                data.favourite = static_cast<bool>(item->getProperty("favourite"));
+                // Files written before the en-US spelling store "favourite".
+                data.favorite = static_cast<bool>(item->hasProperty("favorite") ? item->getProperty("favorite") : item->getProperty("favourite"));
                 data.rating = std::clamp(static_cast<int>(item->getProperty("rating")), 0, 5);
                 data.notes = text(item->getProperty("notes"));
                 values[property.name.toString().toStdString()] = data;
@@ -691,7 +692,7 @@ void LibraryUserStore::save() const
     for (const auto& [id, data] : values)
     {
         auto* item = new juce::DynamicObject();
-        item->setProperty("favourite", data.favourite);
+        item->setProperty("favorite", data.favorite);
         item->setProperty("rating", data.rating);
         item->setProperty("notes", juce::String::fromUTF8(data.notes.c_str()));
         object->setProperty(juce::Identifier(juce::String::fromUTF8(id.c_str())), juce::var(item));

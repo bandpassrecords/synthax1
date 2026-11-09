@@ -153,7 +153,44 @@ SynthAudioProcessor::SynthAudioProcessor()
         if (spec.presetSerialized)
             parameters.addParameterListener(juce::String(spec.id), this);
     loadMidiControllerAssignments();
+    // A new instance in a host or the standalone app starts from the last bank loaded. A host that restores a project
+    // replaces this with the saved state; tests and renders (no wrapper) keep the factory programs.
+    if (wrapperType != wrapperType_Undefined)
+        loadLastBank();
     startTimerHz(60);
+}
+
+juce::File SynthAudioProcessor::lastBankFile()
+{
+    const auto utf8 = (synth::libraryDataDirectory() / "last-bank.json").generic_u8string();
+    return juce::File(juce::String::fromUTF8(reinterpret_cast<const char*>(utf8.c_str())));
+}
+
+void SynthAudioProcessor::rememberLastBank(const juce::File& bank, int program) const
+{
+    auto object = std::make_unique<juce::DynamicObject>();
+    object->setProperty("bank", bank.getFullPathName());
+    object->setProperty("program", program);
+    const auto file = lastBankFile();
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText(juce::JSON::toString(juce::var(object.release()), true));
+}
+
+void SynthAudioProcessor::loadLastBank()
+{
+    const auto parsed = juce::JSON::parse(lastBankFile());
+    const auto* object = parsed.getDynamicObject();
+    if (object == nullptr)
+        return;
+    const auto bank = juce::File(object->getProperty("bank").toString());
+    if (bank.getFullPathName().isEmpty() || !bank.existsAsFile())
+        return;
+    juce::String message;
+    if (!loadProgramBankFile(bank, message))
+        return;
+    const auto program = static_cast<int>(object->getProperty("program"));
+    if (program > 0 && program < programCount)
+        selectProgram(program, message);
 }
 
 SynthAudioProcessor::~SynthAudioProcessor()
@@ -1057,6 +1094,25 @@ bool SynthAudioProcessor::loadLibraryEntry(const std::filesystem::path& path, sy
     const juce::ScopedLock operationLock(programLock);
     return applyPreparedPresetState(program.state, synth::fingerprintPresetState(program.state), "Loaded " + program.name, program.name,
                                     file.getFullPathName(), message);
+}
+
+bool SynthAudioProcessor::loadLibraryBankProgram(const std::filesystem::path& path, int programIndex, juce::String& message)
+{
+    const auto file = juceFileForPath(path);
+    if (programIndex < 0 || programIndex >= programCount)
+        return loadLibraryEntry(path, synth::LibraryKind::LegacyProgram, programIndex, message);
+    const juce::ScopedLock operationLock(programLock);
+    if (!loadProgramBank(file, message))
+        return false;
+    juce::String selectMessage;
+    if (!selectProgram(programIndex, selectMessage))
+    {
+        message = selectMessage;
+        return false;
+    }
+    rememberLastBank(file, programIndex);
+    message = "Loaded bank " + file.getFileNameWithoutExtension() + ", program " + juce::String(programIndex + 1);
+    return true;
 }
 
 SynthAudioProcessor::PresetSnapshot SynthAudioProcessor::capturePresetSnapshot()
@@ -2077,6 +2133,15 @@ bool SynthAudioProcessor::restoreProgramBankState(const juce::ValueTree& bank, j
 }
 
 bool SynthAudioProcessor::loadProgramBank(const juce::File& file, juce::String& message)
+{
+    const juce::ScopedLock operationLock(programLock);
+    if (!loadProgramBankFile(file, message))
+        return false;
+    rememberLastBank(file, getCurrentProgram());
+    return true;
+}
+
+bool SynthAudioProcessor::loadProgramBankFile(const juce::File& file, juce::String& message)
 {
     const juce::ScopedLock operationLock(programLock);
     if (file.hasFileExtension("fxb;fxp"))

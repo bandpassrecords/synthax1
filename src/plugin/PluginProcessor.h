@@ -53,6 +53,7 @@ public:
     bool pasteCurrentProgram(juce::String& message);
     bool insertCurrentProgram(juce::String& message);
     bool deleteCurrentProgram(juce::String& message);
+    // Loads a bank into the program slots and remembers it, so the next new instance starts from it.
     bool loadProgramBank(const juce::File& file, juce::String& message);
     bool saveProgramBank(const juce::File& file, bool overwrite, juce::String& message);
     // The reference synth interop. A the reference synth bank has 512 slots, like this processor's four sub-banks,
@@ -129,6 +130,8 @@ public:
     bool loadPresetFile(const juce::File& file, juce::String& message);
     // Loads one entry of the preset library: a Synthax1 preset file or one program of a the reference synth bank.
     bool loadLibraryEntry(const std::filesystem::path& file, synth::LibraryKind kind, int programIndex, juce::String& message);
+    // Loads the whole bank a library program comes from into the program slots and selects that program.
+    bool loadLibraryBankProgram(const std::filesystem::path& file, int programIndex, juce::String& message);
 
     // The current sound, so the preset browser can audition presets and put the original back.
     struct PresetSnapshot
@@ -458,6 +461,11 @@ private:
     void timerCallback() override;
     void parameterChanged(const juce::String& parameterId, float newValue) override;
     void loadMidiControllerAssignments();
+    bool loadProgramBankFile(const juce::File& file, juce::String& message);
+    // The last bank loaded (any instance), kept beside the user presets; a new instance starts from it.
+    static juce::File lastBankFile();
+    void rememberLastBank(const juce::File& bank, int program) const;
+    void loadLastBank();
     void publishMidiControllerAssignments();
     bool assignMidiControllerInternal(int controllerNumber,
                                       const juce::String& parameterId,

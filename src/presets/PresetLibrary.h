@@ -9,7 +9,7 @@
 //    modification time, so a rescan only reads what is new or changed;
 //  - the cache loads without touching the folders, so the list appears at once;
 //  - a lower-case search text is prepared per entry, so searching and sorting never convert strings.
-// User data (favourites, ratings, notes) is kept apart from the catalogue and survives rescans.
+// User data (favorites, ratings, notes) is kept apart from the catalogue and survives rescans.
 
 #include <cstdint>
 #include <filesystem>
@@ -67,7 +67,7 @@ struct LibraryRoot
 
 struct LibraryUserData
 {
-    bool favourite = false;
+    bool favorite = false;
     int rating = 0; // 0 to 5
     std::string notes;
 };

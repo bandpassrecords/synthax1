@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <map>
+#include <random>
 #include <unordered_map>
 
 namespace
@@ -49,7 +50,22 @@ std::string lowerCase(const std::string& value)
     return juce::String::fromUTF8(value.c_str()).toLowerCase().toStdString();
 }
 
-constexpr int columnName = 1, columnLocation = 2, columnCategory = 3, columnDate = 4, columnRating = 5;
+constexpr int columnName = 1, columnLocation = 2, columnCategory = 3, columnDate = 4, columnFavorite = 5;
+
+// Whether the details panel was open; it stays the same the next time the browser opens.
+bool detailsShown = false;
+
+// The special rows of the left list. Favorites and Loose presets are groups that open into one row per category.
+constexpr int rowAll = 1, rowFavorites = 2, rowLoose = 3, rowFavoriteCategory = 4, rowLooseCategory = 5;
+constexpr int categoryRowOf(int group) { return group == rowFavorites ? rowFavoriteCategory : rowLooseCategory; }
+constexpr int groupOf(int categoryRow) { return categoryRow == rowFavoriteCategory ? rowFavorites : rowLoose; }
+constexpr bool isCategoryRow(int special) { return special == rowFavoriteCategory || special == rowLooseCategory; }
+constexpr bool isGroup(int special) { return special == rowFavorites || special == rowLoose; }
+
+// Which groups are open; kept while the instrument stays loaded.
+bool favoritesOpen = true;
+bool looseOpen = false;
+bool& groupOpen(int group) { return group == rowFavorites ? favoritesOpen : looseOpen; }
 
 enum class SideMode
 {
@@ -66,7 +82,8 @@ struct SideItem
     std::uint32_t id = 0; // string table index (categories, packs, vendors)
     std::string tag;      // for the tags list
     int count = 0;
-    int special = 0; // 1 all presets, 2 favourites
+    int special = 0;          // 0 an ordinary row, else one of the row constants above (a category row keeps its category in id)
+    bool hasChildren = false; // a group with category rows to show
 };
 
 void drawStar(juce::Graphics& g, juce::Rectangle<float> area, bool filled, juce::Colour colour)
@@ -138,7 +155,7 @@ public:
     {
         data = std::make_shared<synth::LibraryData>();
 
-        searchBox.setTextToShowWhenEmpty("Search presets   (cat:bass  pack:factory  tag:warm  fav:1  rating:3)", displayInk.withAlpha(0.7f));
+        searchBox.setTextToShowWhenEmpty("Search presets   (cat:bass  pack:factory  tag:warm  fav:1)", displayInk.withAlpha(0.7f));
         searchBox.setFont(font(14.0f));
         searchBox.setColour(juce::TextEditor::backgroundColourId, displayBlue);
         searchBox.setColour(juce::TextEditor::textColourId, displayInk.darker(0.4f));
@@ -165,7 +182,7 @@ public:
                 if (sideMode != mode)
                 {
                     sideMode = mode;
-                    sideSelection = SideItem { {}, 0, {}, 0, 1 };
+                    sideSelection = SideItem { {}, 0, {}, 0, rowAll };
                     rebuildSide();
                     applyFilter();
                 }
@@ -190,11 +207,12 @@ public:
         header.setColour(juce::TableHeaderComponent::backgroundColourId, graphite);
         header.setColour(juce::TableHeaderComponent::textColourId, selectedTextColour);
         header.setColour(juce::TableHeaderComponent::outlineColourId, juce::Colour(0xff343836));
+        header.addColumn("FAV", columnFavorite, 40, 40, 40,
+                         juce::TableHeaderComponent::notResizable | juce::TableHeaderComponent::visible | juce::TableHeaderComponent::sortable);
         header.addColumn("NAME", columnName, 300, 120, 600, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("LOCATION", columnLocation, 220, 80, 500, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("CATEGORY", columnCategory, 100, 60, 200, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("MODIFIED", columnDate, 110, 80, 200, juce::TableHeaderComponent::defaultFlags);
-        header.addColumn("RATING", columnRating, 100, 100, 100, juce::TableHeaderComponent::notResizable | juce::TableHeaderComponent::visible);
         header.setSortColumnId(columnName, true);
         header.setStretchToFitActive(true);
         table.getViewport()->setScrollBarsShown(true, false);
@@ -225,11 +243,21 @@ public:
         notesBox.onReturnKey = [] {};
         addAndMakeVisible(notesBox);
 
-        favouriteButton.setButtonText("FAVOURITE");
-        favouriteButton.setColour(juce::ToggleButton::textColourId, textColour);
-        favouriteButton.setColour(juce::ToggleButton::tickColourId, accentColour);
-        favouriteButton.onClick = [this] { setFavourite(favouriteButton.getToggleState()); };
-        addAndMakeVisible(favouriteButton);
+        detailsButton.setButtonText("INFO");
+        detailsButton.setClickingTogglesState(true);
+        detailsButton.setToggleState(detailsShown, juce::dontSendNotification);
+        detailsButton.setColour(juce::TextButton::buttonColourId, graphite);
+        detailsButton.setColour(juce::TextButton::buttonOnColourId, panelColour);
+        detailsButton.setColour(juce::TextButton::textColourOffId, textColour);
+        detailsButton.setColour(juce::TextButton::textColourOnId, accentColour);
+        detailsButton.setTooltip("Show or hide the preset details and notes");
+        detailsButton.setLookAndFeel(&smallButtons);
+        detailsButton.onClick = [this] {
+            saveNotesFor(detailEntry);
+            detailsShown = detailsButton.getToggleState();
+            resized();
+        };
+        addAndMakeVisible(detailsButton);
 
         previewButton.setButtonText("PLAY PREVIEW");
         previewButton.setToggleState(settings.previewOnSelect, juce::dontSendNotification);
@@ -249,6 +277,22 @@ public:
             applyFilter();
         };
         addAndMakeVisible(duplicatesButton);
+
+        // Shuffle: the list in a random order, so stepping through it is unpredictable. Each time it is switched on
+        // the order is new; choosing a column to sort by switches it off.
+        shuffleButton.setButtonText("SHUFFLE");
+        shuffleButton.setColour(juce::ToggleButton::textColourId, textColour);
+        shuffleButton.setColour(juce::ToggleButton::tickColourId, accentColour);
+        shuffleButton.setTooltip("List the presets in a random order");
+        shuffleButton.onClick = [this] {
+            shuffled = shuffleButton.getToggleState();
+            shuffleSeed = static_cast<std::uint32_t>(juce::Random::getSystemRandom().nextInt());
+            resort();
+            applyFilter();
+            if (!rows.empty())
+                table.scrollToEnsureRowIsOnscreen(0);
+        };
+        addAndMakeVisible(shuffleButton);
 
         hintLabel.setText("Double click to select", juce::dontSendNotification);
         hintLabel.setFont(font(12.0f));
@@ -289,6 +333,7 @@ public:
         for (auto* tab : tabs)
             tab->setLookAndFeel(nullptr);
         settingsButton.setLookAndFeel(nullptr);
+        detailsButton.setLookAndFeel(nullptr);
         closeButton.setLookAndFeel(nullptr);
         stopPreview();
         if (auditioning)
@@ -311,18 +356,15 @@ public:
         g.drawEllipse(centre.x - 5.0f, centre.y - 5.0f, 9.0f, 9.0f, 1.4f);
         g.drawLine(centre.x + 2.5f, centre.y + 2.5f, centre.x + 7.0f, centre.y + 7.0f, 1.6f);
 
-        // Right panel headings.
+        // Right panel headings (when the panel is open).
+        if (detailsArea.isEmpty())
+            return;
         g.setColour(panelColour);
         g.fillRect(detailsArea);
         g.setColour(dimTextColour);
         g.setFont(font(11.0f, true));
         for (const auto& [title, y] : headingPositions)
             g.drawText(title, detailsArea.getX() + 14, y, detailsArea.getWidth() - 28, 14, juce::Justification::left);
-
-        // Rating stars in the details panel.
-        const auto user = detailEntry >= 0 ? userOf(detailEntry) : synth::LibraryUserData {};
-        for (int star = 0; star < 5; ++star)
-            drawStar(g, starBounds(star).toFloat(), star < user.rating, star < user.rating ? accentColour : dimTextColour);
     }
 
     void resized() override
@@ -331,17 +373,20 @@ public:
         auto top = area.removeFromTop(32);
         closeButton.setBounds(top.removeFromRight(70));
         top.removeFromRight(8);
+        detailsButton.setBounds(top.removeFromRight(60));
+        top.removeFromRight(8);
         settingsButton.setBounds(top.removeFromRight(120));
         top.removeFromRight(8);
         searchBox.setBounds(top);
         area.removeFromTop(8);
 
         auto bottom = area.removeFromBottom(26);
-        statusLabel.setBounds(bottom.removeFromRight(380));
-        previewButton.setBounds(bottom.removeFromLeft(150));
+        statusLabel.setBounds(bottom.removeFromRight(330));
+        previewButton.setBounds(bottom.removeFromLeft(140));
         duplicatesButton.setBounds(bottom.removeFromLeft(160));
+        shuffleButton.setBounds(bottom.removeFromLeft(110));
         bottom.removeFromLeft(10);
-        hintLabel.setBounds(bottom.removeFromLeft(170));
+        hintLabel.setBounds(bottom.removeFromLeft(140));
         area.removeFromBottom(6);
 
         const auto leftWidth = juce::jlimit(150, 230, getWidth() / 5);
@@ -354,8 +399,17 @@ public:
         sideList.setBounds(left);
         area.removeFromLeft(8);
 
-        detailsArea = area.removeFromRight(detailsWidth);
-        area.removeFromRight(8);
+        detailsArea = {};
+        if (detailsShown)
+        {
+            detailsArea = area.removeFromRight(detailsWidth);
+            area.removeFromRight(8);
+        }
+        for (juce::Component* detail : { static_cast<juce::Component*>(&nameValue), static_cast<juce::Component*>(&authorValue),
+                                         static_cast<juce::Component*>(&categoryValue), static_cast<juce::Component*>(&bankValue),
+                                         static_cast<juce::Component*>(&locationValue), static_cast<juce::Component*>(&descriptionValue),
+                                         static_cast<juce::Component*>(&tagsValue), static_cast<juce::Component*>(&notesBox) })
+            detail->setVisible(detailsShown);
         table.setBounds(area);
         chooseFolderButton.setBounds(area.getCentreX() - 150, area.getCentreY() - 22, 300, 44);
         table.getHeader().resizeAllColumnsToFit(table.getVisibleContentWidth());
@@ -385,22 +439,6 @@ public:
         return false;
     }
 
-    void mouseDown(const juce::MouseEvent& event) override
-    {
-        if (detailEntry < 0)
-            return;
-        for (int star = 0; star < 5; ++star)
-            if (starBounds(star).contains(event.getPosition()))
-            {
-                auto user = userOf(detailEntry);
-                user.rating = user.rating == star + 1 ? 0 : star + 1;
-                setUser(detailEntry, user);
-                table.repaint();
-                repaint();
-                return;
-            }
-    }
-
 private:
     // ---- the catalogue --------------------------------------------------------------------------------------------
     // With duplicates hidden, only the first of several identical sounds is listed.
@@ -421,7 +459,7 @@ private:
     void setUser(int index, const synth::LibraryUserData& user)
     {
         store.set(data->idOf(entryAt(index)), user);
-        if (!user.favourite && user.rating == 0 && user.notes.empty())
+        if (!user.favorite && user.rating == 0 && user.notes.empty())
             userByEntry.erase(index);
         else
             userByEntry[index] = user;
@@ -463,12 +501,7 @@ private:
                                  icon.getRight() - 3.5f, icon.getCentreY());
             g.setColour(textColour);
             g.fillPath(triangle);
-            auto left = 28;
-            if (!userByEntry.empty() && userOf(index).favourite)
-            {
-                drawStar(g, { 28.0f, (height - 12.0f) * 0.5f, 12.0f, 12.0f }, true, accentColour);
-                left = 44;
-            }
+            const auto left = 28;
             g.setColour(selected ? selectedTextColour : textColour);
             g.drawText(text(entry.name), left, 0, width - left - 4, height, juce::Justification::centredLeft, true);
         }
@@ -482,12 +515,12 @@ private:
         }
         else if (columnId == columnDate)
             g.drawText(juce::Time(entry.modified).formatted("%Y-%m-%d"), 6, 0, width - 8, height, juce::Justification::centredLeft, true);
-        else if (columnId == columnRating)
+        else if (columnId == columnFavorite)
         {
-            const auto rating = userByEntry.empty() ? 0 : userOf(index).rating;
-            for (int star = 0; star < 5; ++star)
-                drawStar(g, { 6.0f + static_cast<float>(star) * 17.0f, (height - 13.0f) * 0.5f, 13.0f, 13.0f }, star < rating,
-                         star < rating ? accentColour : (selected ? juce::Colour(0xff9bb7c4) : juce::Colour(0xff4d514f)));
+            // A star to click: filled for a favorite, an outline otherwise.
+            const auto favorite = !userByEntry.empty() && userOf(index).favorite;
+            drawStar(g, { (width - 14.0f) * 0.5f, (height - 14.0f) * 0.5f, 14.0f, 14.0f }, favorite,
+                     favorite ? accentColour : (selected ? juce::Colour(0xff9bb7c4) : juce::Colour(0xff4d514f)));
         }
     }
 
@@ -496,15 +529,8 @@ private:
         if (row < 0 || row >= static_cast<int>(rows.size()))
             return;
         const auto index = rows[static_cast<std::size_t>(row)];
-        if (columnId == columnRating)
-        {
-            const auto star = juce::jlimit(0, 4, (event.x - 6) / 17);
-            auto user = userOf(index);
-            user.rating = user.rating == star + 1 ? 0 : star + 1;
-            setUser(index, user);
-            table.repaintRow(row);
-            repaint();
-        }
+        if (columnId == columnFavorite && !event.mods.isPopupMenu())
+            toggleFavorite(index);
         else if (columnId == columnName && event.x >= 4 && event.x <= 24)
         {
             // The play icon: load this preset for a moment and hear it.
@@ -519,13 +545,19 @@ private:
         }
     }
 
-    void cellDoubleClicked(int, int, const juce::MouseEvent&) override { commitSelected(); }
+    void cellDoubleClicked(int, int columnId, const juce::MouseEvent&) override
+    {
+        if (columnId != columnFavorite) // two quick clicks on the star only toggle it twice
+            commitSelected();
+    }
     void returnKeyPressed(int) override { commitSelected(); }
 
     void sortOrderChanged(int newSortColumnId, bool isForwards) override
     {
         sortColumn = newSortColumnId;
         sortForwards = isForwards;
+        shuffled = false;
+        shuffleButton.setToggleState(false, juce::dontSendNotification);
         resort();
         applyFilter();
     }
@@ -562,9 +594,23 @@ private:
                 g.setColour(selectedRowColour);
                 g.fillRect(0, 0, width, height);
             }
-            g.setFont(font(13.0f, item.special != 0));
-            g.setColour(selected ? selectedTextColour : (item.special != 0 ? textColour : textColour.withAlpha(0.85f)));
-            g.drawText(item.label, 12, 0, width - 56, height, juce::Justification::centredLeft, true);
+            // Group rows carry an arrow that opens and closes them; their category rows sit indented below.
+            const auto heading = item.special != 0 && !isCategoryRow(item.special);
+            const auto indent = isCategoryRow(item.special) ? 30 : (item.special != 0 ? 20 : 12);
+            if (isGroup(item.special) && item.hasChildren)
+            {
+                juce::Path arrow;
+                const auto centre = juce::Point<float>(10.0f, static_cast<float>(height) * 0.5f);
+                if (groupOpen(item.special))
+                    arrow.addTriangle(centre.x - 4.0f, centre.y - 2.0f, centre.x + 4.0f, centre.y - 2.0f, centre.x, centre.y + 3.0f);
+                else
+                    arrow.addTriangle(centre.x - 2.0f, centre.y - 4.0f, centre.x - 2.0f, centre.y + 4.0f, centre.x + 3.0f, centre.y);
+                g.setColour(selected ? selectedTextColour : dimTextColour);
+                g.fillPath(arrow);
+            }
+            g.setFont(font(13.0f, heading));
+            g.setColour(selected ? selectedTextColour : (heading ? textColour : textColour.withAlpha(0.85f)));
+            g.drawText(item.label, indent, 0, width - indent - 44, height, juce::Justification::centredLeft, true);
             g.setColour(dimTextColour);
             g.setFont(font(11.0f));
             g.drawText(juce::String(item.count), width - 50, 0, 42, height, juce::Justification::centredRight);
@@ -575,6 +621,17 @@ private:
                 return;
             owner.sideSelection = owner.sideItems[static_cast<std::size_t>(lastRow)];
             owner.applyFilter();
+        }
+        // A click on a group's arrow, or a double click on the group's name, opens or closes it.
+        void listBoxItemClicked(int row, const juce::MouseEvent& event) override
+        {
+            if (row >= 0 && row < getNumRows() && event.x < 20)
+                owner.toggleGroup(owner.sideItems[static_cast<std::size_t>(row)]);
+        }
+        void listBoxItemDoubleClicked(int row, const juce::MouseEvent& event) override
+        {
+            if (row >= 0 && row < getNumRows() && event.x >= 20)
+                owner.toggleGroup(owner.sideItems[static_cast<std::size_t>(row)]);
         }
 
     private:
@@ -620,21 +677,62 @@ private:
         updateStatus();
     }
 
+    void toggleGroup(const SideItem& item)
+    {
+        if (!isGroup(item.special) || !item.hasChildren)
+            return;
+        groupOpen(item.special) = !groupOpen(item.special);
+        rebuildSide();
+    }
+
+    // Rebuilds the left list. When the chosen row has gone, the presets shown follow the row chosen in its place.
     void rebuildSide()
+    {
+        sideSelectionMoved = false;
+        rebuildSideRows();
+        if (sideSelectionMoved)
+            applyFilter();
+    }
+
+    void rebuildSideRows()
     {
         rebuildingSide = true;
         sideItems.clear();
-        const auto favourites = static_cast<int>(std::count_if(userByEntry.begin(), userByEntry.end(), [](const auto& item) { return item.second.favourite; }));
-        int shown = 0, loose = 0;
+        // Favorites and loose presets, counted by category.
+        std::map<std::uint32_t, int> favoriteCategories, looseCategories;
+        int favorites = 0, shown = 0, loose = 0;
+        for (const auto& [index, user] : userByEntry)
+            if (user.favorite && index >= 0 && index < static_cast<int>(data->entries.size()))
+            {
+                ++favorites;
+                ++favoriteCategories[entryAt(index).category];
+            }
         for (std::size_t i = 0; i < data->entries.size(); ++i)
             if (listed(static_cast<int>(i)))
             {
                 ++shown;
-                loose += data->entries[i].loose ? 1 : 0;
+                if (data->entries[i].loose)
+                {
+                    ++loose;
+                    ++looseCategories[data->entries[i].category];
+                }
             }
-        sideItems.push_back({ "All presets", 0, {}, shown, 1 });
-        sideItems.push_back({ "Favourites", 0, {}, favourites, 2 });
-        sideItems.push_back({ "Loose presets", 0, {}, loose, 3 });
+        const auto addGroup = [this](const juce::String& label, int count, int group, const std::map<std::uint32_t, int>& categories) {
+            sideItems.push_back({ label, 0, {}, count, group, !categories.empty() });
+            if (!groupOpen(group))
+                return;
+            std::vector<std::uint32_t> ids;
+            for (const auto& [id, number] : categories)
+                ids.push_back(id);
+            std::sort(ids.begin(), ids.end(), [this](std::uint32_t a, std::uint32_t b) {
+                return a == 0 ? false : b == 0 ? true : lowerCase(data->text(a)) < lowerCase(data->text(b)); // "(no category)" last
+            });
+            for (const auto id : ids)
+                sideItems.push_back({ id == 0 ? juce::String("(no category)") : text(data->text(id)), id, {}, categories.at(id), categoryRowOf(group) });
+        };
+        sideItems.push_back({ "All presets", 0, {}, shown, rowAll });
+        addGroup("Favorites", favorites, rowFavorites, favoriteCategories);
+        addGroup("Loose presets", loose, rowLoose, looseCategories);
         if (sideMode == SideMode::Tags)
         {
             std::map<std::string, int> counts;
@@ -667,15 +765,28 @@ private:
                 sideItems.push_back({ id == 0 ? juce::String("(no category)") : text(data->text(id)), id, {}, counts[id], 0 });
         }
         sideList.updateContent();
-        int select = 0;
+        int select = -1;
         for (std::size_t i = 0; i < sideItems.size(); ++i)
         {
             const auto& item = sideItems[i];
-            if (item.special == sideSelection.special && item.special != 0)
+            if (isCategoryRow(item.special) && item.special == sideSelection.special && item.id == sideSelection.id)
+                select = static_cast<int>(i);
+            else if (item.special == sideSelection.special && item.special != 0 && !isCategoryRow(item.special))
                 select = static_cast<int>(i);
             else if (sideSelection.special == 0 && item.special == 0
                      && ((sideMode == SideMode::Tags && item.tag == sideSelection.tag) || (sideMode != SideMode::Tags && item.id == sideSelection.id)))
                 select = static_cast<int>(i);
+        }
+        if (select < 0)
+        {
+            // The chosen row is gone (its group was closed, or its last favorite removed): fall back to the group, or All presets.
+            const auto fallback = isCategoryRow(sideSelection.special) ? groupOf(sideSelection.special) : rowAll;
+            select = 0;
+            for (std::size_t i = 0; i < sideItems.size(); ++i)
+                if (sideItems[i].special == fallback)
+                    select = static_cast<int>(i);
+            sideSelection = sideItems[static_cast<std::size_t>(select)];
+            sideSelectionMoved = true;
         }
         sideList.selectRow(select, false, true);
         rebuildingSide = false;
@@ -711,14 +822,21 @@ private:
                     return entryAt(a).modified == entryAt(b).modified ? byName(a, b) : entryAt(a).modified < entryAt(b).modified;
                 };
                 break;
-            case columnRating:
+            case columnFavorite:
                 before = [this, &byName](int a, int b) {
-                    const auto left = userOf(a).rating;
-                    const auto right = userOf(b).rating;
-                    return left == right ? byName(a, b) : left > right;
+                    const auto left = userOf(a).favorite;
+                    const auto right = userOf(b).favorite;
+                    return left == right ? byName(a, b) : left;
                 };
                 break;
             default: break;
+        }
+        if (shuffled)
+        {
+            // The same seed gives the same order while the library is still arriving from the scan.
+            std::mt19937 generator(shuffleSeed);
+            std::shuffle(order.begin(), order.end(), generator);
+            return;
         }
         std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return sortForwards ? before(a, b) : before(b, a); });
     }
@@ -730,7 +848,7 @@ private:
         struct Term
         {
             std::string word;
-            char key = 0; // 'c' category, 'p' pack, 'v' vendor, 'a' author, 't' tag, 'f' favourite, 'r' rating
+            char key = 0; // 'c' category, 'p' pack, 'v' vendor, 'a' author, 't' tag, 'f' favorite
             std::vector<char> poolMatch;
             int number = 0;
         };
@@ -758,8 +876,7 @@ private:
                 else if (key == "vendor") matchPool('v');
                 else if (key == "author") matchPool('a');
                 else if (key == "tag") matchPool('t');
-                else if (key == "fav" || key == "favourite") { term.key = 'f'; term.number = value != "0"; }
-                else if (key == "rating") { term.key = 'r'; term.number = juce::String(value).getIntValue(); }
+                else if (key == "fav" || key == "favorite" || key == "favourite") { term.key = 'f'; term.number = value != "0"; }
             }
             terms.push_back(std::move(term));
         }
@@ -771,9 +888,12 @@ private:
             const auto& entry = entryAt(index);
             if (!listed(index))
                 continue;
-            if (sideSelection.special == 2 && !userOf(index).favourite)
+            const auto special = sideSelection.special;
+            if ((special == rowFavorites || special == rowFavoriteCategory) && !userOf(index).favorite)
                 continue;
-            if (sideSelection.special == 3 && !entry.loose)
+            if ((special == rowLoose || special == rowLooseCategory) && !entry.loose)
+                continue;
+            if (isCategoryRow(special) && entry.category != sideSelection.id)
                 continue;
             if (sideSelection.special == 0)
             {
@@ -800,8 +920,7 @@ private:
                     case 'v': keepEntry = term.poolMatch[entry.vendor] != 0; break;
                     case 'a': keepEntry = term.poolMatch[entry.author] != 0; break;
                     case 't': keepEntry = term.poolMatch[entry.tags] != 0; break;
-                    case 'f': keepEntry = userOf(index).favourite == (term.number != 0); break;
-                    case 'r': keepEntry = userOf(index).rating >= term.number; break;
+                    case 'f': keepEntry = userOf(index).favorite == (term.number != 0); break;
                     default: keepEntry = data->searchText[static_cast<std::size_t>(index)].find(term.word) != std::string::npos; break;
                 }
                 if (!keepEntry)
@@ -858,15 +977,18 @@ private:
         updateStatus();
     }
 
-    // A double click (or Enter) makes the preset the loaded one for good.
+    // A double click (or Enter) makes the preset the loaded one for good. A program that comes from a bank loads
+    // the whole bank into the program slots and selects that program; a preset file (or a lone .fxp) loads alone.
     void commitSelected()
     {
         if (selectedEntry < 0)
             return;
         const auto& entry = entryAt(selectedEntry);
         juce::String message;
-        const auto ok = owner.loadLibraryEntry(data->pathOf(entry), entry.kind, entry.programIndex, message);
-        statusText = ok ? "Loaded: " + text(entry.name) : message;
+        const auto fromBank = entry.kind == synth::LibraryKind::LegacyProgram && !entry.loose;
+        const auto ok = fromBank ? owner.loadLibraryBankProgram(data->pathOf(entry), entry.programIndex, message)
+                                 : owner.loadLibraryEntry(data->pathOf(entry), entry.kind, entry.programIndex, message);
+        statusText = ok ? (fromBank ? message : "Loaded: " + text(entry.name)) : message;
         if (ok)
         {
             committed = owner.capturePresetSnapshot();
@@ -895,15 +1017,16 @@ private:
 
     void timerCallback() override { stopPreview(); }
 
-    void setFavourite(bool favourite)
+    void toggleFavorite(int index)
     {
-        if (detailEntry < 0)
-            return;
-        auto user = userOf(detailEntry);
-        user.favourite = favourite;
-        setUser(detailEntry, user);
+        auto user = userOf(index);
+        user.favorite = !user.favorite;
+        setUser(index, user);
         rebuildSide();
-        table.repaint();
+        if (sideSelection.special == rowFavorites || sideSelection.special == rowFavoriteCategory)
+            applyFilter(); // the favorites list drops a preset that is no longer a favorite
+        else
+            table.repaint();
     }
 
     void saveNotesFor(int index)
@@ -923,18 +1046,12 @@ private:
     {
         juce::PopupMenu menu;
         const auto user = userOf(index);
-        menu.addItem(1, user.favourite ? "Remove from favourites" : "Add to favourites");
+        menu.addItem(1, user.favorite ? "Remove from favorites" : "Add to favorites");
         menu.addItem(2, "Show file in explorer");
         const auto path = data->pathOf(entryAt(index));
         menu.showMenuAsync({}, [this, index, path](int result) {
             if (result == 1)
-            {
-                auto stored = userOf(index);
-                stored.favourite = !stored.favourite;
-                setUser(index, stored);
-                rebuildSide();
-                applyFilter();
-            }
+                toggleFavorite(index);
             else if (result == 2)
                 juce::File(pathText(path)).revealToUser();
         });
@@ -1055,20 +1172,10 @@ private:
         place("PACK", bankValue, 22);
         place("LOCATION", locationValue, 22);
         place("DESCRIPTION", descriptionValue, 36);
-        headingPositions.emplace_back("RATING", area.getY());
-        area.removeFromTop(14);
-        ratingRow = area.removeFromTop(20);
-        favouriteButton.setBounds(ratingRow.removeFromRight(110));
-        area.removeFromTop(6);
         place("TAGS", tagsValue, 28);
         headingPositions.emplace_back("NOTES", area.getY());
         area.removeFromTop(14);
         notesBox.setBounds(area);
-    }
-
-    juce::Rectangle<int> starBounds(int star) const
-    {
-        return { ratingRow.getX() + star * 22, ratingRow.getY() + 2, 20, 18 };
     }
 
     void updateDetails()
@@ -1094,8 +1201,6 @@ private:
         set(tagsValue, tags);
         notesBox.setText(text(user.notes), juce::dontSendNotification);
         notesBox.setEnabled(entry != nullptr);
-        favouriteButton.setEnabled(entry != nullptr);
-        favouriteButton.setToggleState(user.favourite, juce::dontSendNotification);
         repaint(detailsArea);
     }
 
@@ -1131,7 +1236,7 @@ private:
     synth::LibrarySettings settings;
     synth::LibraryUserStore store;
     DataPointer data;
-    std::unordered_map<int, synth::LibraryUserData> userByEntry; // by entry index, for entries with favourites, ratings or notes
+    std::unordered_map<int, synth::LibraryUserData> userByEntry; // by entry index, for entries with favorites, ratings or notes
     std::vector<int> order; // every entry, sorted by the current column
     std::vector<int> rows;  // the entries that pass the filter, in that order
     int selectedEntry = -1;
@@ -1140,13 +1245,14 @@ private:
     bool sortForwards = true;
     bool ignoreSelection = false;
     bool rebuildingSide = false;
+    bool sideSelectionMoved = false;
     bool previewing = false;
     bool scanning = false;
     int scannedFiles = 0;
     juce::String statusText;
 
     SideMode sideMode = SideMode::Categories;
-    SideItem sideSelection { {}, 0, {}, 0, 1 };
+    SideItem sideSelection { {}, 0, {}, 0, rowAll };
     std::vector<SideItem> sideItems;
     SideModel sideModel;
     juce::ListBox sideList;
@@ -1155,15 +1261,17 @@ private:
 
     juce::TextEditor searchBox;
     juce::TableListBox table;
-    juce::TextButton settingsButton;
-    juce::ToggleButton previewButton, favouriteButton, duplicatesButton;
+    juce::TextButton settingsButton, detailsButton;
+    juce::ToggleButton previewButton, duplicatesButton, shuffleButton;
+    bool shuffled = false;
+    std::uint32_t shuffleSeed = 0;
     juce::Label hintLabel;
     SynthAudioProcessor::PresetSnapshot committed;
     bool auditioning = false;
     juce::Label statusLabel;
     juce::Label nameValue, authorValue, categoryValue, bankValue, locationValue, descriptionValue, tagsValue;
     juce::TextEditor notesBox;
-    juce::Rectangle<int> detailsArea, ratingRow;
+    juce::Rectangle<int> detailsArea;
     std::vector<std::pair<juce::String, int>> headingPositions;
     std::unique_ptr<LoadThread> loader;
     std::unique_ptr<juce::FileChooser> chooser;
