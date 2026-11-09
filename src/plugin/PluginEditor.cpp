@@ -1281,6 +1281,24 @@ public:
             }
             return;
         }
+        if (label == "undo" || label == "redo")
+        {
+            const auto side = label == "undo" ? -1.0f : 1.0f; // the arrow's tip: left for undo, right for redo
+            const auto centre = area.getCentre();
+            const auto radius = std::min(area.getWidth(), area.getHeight()) * 0.26f;
+            juce::Path arc;
+            // An arc over the top, from the far side round to the tip's side.
+            arc.addCentredArc(centre.x, centre.y + radius * 0.35f, radius, radius, 0.0f,
+                              -side * juce::MathConstants<float>::halfPi * 1.15f, side * juce::MathConstants<float>::halfPi * 0.95f, true);
+            const auto ink = (lcd ? displayInk : lettering).withMultipliedAlpha(isEnabled() ? 1.0f : 0.35f);
+            g.setColour(ink);
+            g.strokePath(arc, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            const auto tip = arc.getCurrentPosition();
+            juce::Path head;
+            head.addTriangle(tip.x, tip.y + 3.0f, tip.x - 2.8f, tip.y - 1.0f, tip.x + 2.8f, tip.y - 1.0f); // pointing down
+            g.fillPath(head);
+            return;
+        }
         if (label == "preview")
         {
             // A small speaker: the main surface's preview switch (amber when on).
@@ -2633,6 +2651,22 @@ private:
     void sectionMenu(const juce::String& title, const std::vector<std::string>& prefixes);
     void programMenu();
     void bankProgramMenu();
+    ClassicAction* undoButton = nullptr;
+    ClassicAction* redoButton = nullptr;
+    void updateHistoryButtons()
+    {
+        const auto& history = owner.getParameterHistory();
+        if (undoButton != nullptr && undoButton->isEnabled() != history.canUndo())
+        {
+            undoButton->setEnabled(history.canUndo());
+            undoButton->repaint();
+        }
+        if (redoButton != nullptr && redoButton->isEnabled() != history.canRedo())
+        {
+            redoButton->setEnabled(history.canRedo());
+            redoButton->repaint();
+        }
+    }
     // The bank list toggles: a click on the name while it is open (or the click that just closed it) only closes it.
     bool bankMenuOpen = false;
     juce::uint32 bankMenuClosedAtMs = 0;
@@ -2854,6 +2888,12 @@ void SynthAudioProcessorEditor::ClassicSurface::buildControls()
     actions.clear();
     displays.clear();
     captions.clear();
+    // Undo and redo, top left (Ctrl+Z and Ctrl+Y do the same); dimmed when there is nothing to undo or redo.
+    undoButton = action("undo", 33, 6, 15, 16, [this] { owner.getParameterHistory().undo(); }, false, "Undo (Ctrl+Z)");
+    undoButton->setTooltip("Undo (Ctrl+Z)");
+    redoButton = action("redo", 49, 6, 15, 16, [this] { owner.getParameterHistory().redo(); }, false, "Redo (Ctrl+Y)");
+    redoButton->setTooltip("Redo (Ctrl+Y)");
+    updateHistoryButtons();
     caption("Polyphony", 57, 5, 73, 18, 12);
     add("voice.polyphony", "Polyphony", Style::Field, 132, 6, 22, 16);
     caption("Voices", 188, 4, 59, 18, 12);
@@ -3566,6 +3606,7 @@ void SynthAudioProcessorEditor::ClassicSurface::saveFile(bool bank, std::functio
 
 void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
 {
+    updateHistoryButtons();
     if (owner.getSelectedPart() != selectedPart) setPart(owner.getSelectedPart());
     const auto bindingState = bindingStateNow();
     if (controlBindingState != bindingState || lastProgramIndex != owner.getCurrentProgram())
