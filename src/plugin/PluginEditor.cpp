@@ -2766,6 +2766,12 @@ private:
     {
         return owner.getValueTreeState().getParameter(wheel == 0 ? "performance.pitch_bend" : "performance.mod_wheel");
     }
+    // The readout uses the knob scale: the bend wheel reads -10 to 10, the mod wheel 0 to 10.
+    void announceWheel(int wheel, float normalized)
+    {
+        const auto value = wheel == 0 ? (normalized * 2.0f - 1.0f) * 10.0f : normalized * 10.0f;
+        announce(wheel == 0 ? "Pitch Bend" : "Mod Wheel", juce::String(std::abs(value) < 0.0005f ? 0.0f : value, 3));
+    }
     void endWheelGesture()
     {
         if (draggingWheel < 0)
@@ -2773,7 +2779,10 @@ private:
         if (auto* parameter = wheelParameter(draggingWheel))
         {
             if (draggingWheel == 0)
+            {
                 parameter->setValueNotifyingHost(0.5f); // the bend wheel springs back to centre
+                announceWheel(0, 0.5f);
+            }
             parameter->endChangeGesture();
         }
         draggingWheel = -1;
@@ -3393,6 +3402,21 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDown(const juce::MouseEvent
     {
         if (event.position.x >= 75 && event.position.x <= 92) draggingWheel = 0;
         else if (event.position.x >= 103 && event.position.x <= 120) draggingWheel = 1;
+        // Ctrl+click: the bend wheel goes to its centre; the mod wheel goes to 5, and from 5 to 0.
+        if (draggingWheel >= 0 && (event.mods.isCtrlDown() || event.mods.isCommandDown()))
+        {
+            if (auto* parameter = wheelParameter(draggingWheel))
+            {
+                const auto atMiddle = std::abs(parameter->getValue() - 0.5f) < 0.0005f;
+                const auto target = draggingWheel == 1 && atMiddle ? 0.0f : 0.5f;
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(target);
+                parameter->endChangeGesture();
+                announceWheel(draggingWheel, target);
+            }
+            draggingWheel = -1;
+            return;
+        }
         if (draggingWheel >= 0)
         {
             if (auto* parameter = wheelParameter(draggingWheel))
@@ -3413,10 +3437,11 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDrag(const juce::MouseEvent
 {
     if (draggingWheel >= 0)
     {
-        const auto normalized = juce::jlimit(0.0f, 1.0f, (583 + modulationExtra - event.position.y) / 68);
+        // The same scale the wheel is drawn with (line at 578 - value * 58), so the line stays under the pointer.
+        const auto normalized = juce::jlimit(0.0f, 1.0f, (578.0f + modulationExtra - event.position.y) / 58.0f);
         if (auto* parameter = wheelParameter(draggingWheel))
             parameter->setValueNotifyingHost(normalized);
-        announce(draggingWheel == 0 ? "Pitch Bend" : "Mod Wheel", juce::String(normalized * 100, 1) + " %");
+        announceWheel(draggingWheel, normalized);
     }
     else noteAt(event.position);
 }
@@ -3767,7 +3792,7 @@ void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
     {
         lastPitchWheel = visual.pitchBend;
         lastModWheel = visual.modWheel;
-        repaint(73, 513, 49, 72);
+        repaint(73, 513 + modulationExtra, 49, 72);
     }
     const auto preset = owner.getCurrentPresetName();
     if (preset != lastPreset)

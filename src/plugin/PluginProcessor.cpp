@@ -277,6 +277,27 @@ void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     engine.setParameters(parameterSnapshot);
     drainUiMidiMessages();
 
+    // The wheel parameters (host automation or the on-screen wheels) move the sound when their value changes;
+    // MIDI wheel messages keep working on top of that. This runs before the idle return, so a wheel moved (or let go)
+    // while no note sounds still reaches the engine and the on-screen wheel.
+    if (performancePitchBend != nullptr && performanceModWheel != nullptr)
+    {
+        const auto bend = performancePitchBend->load(std::memory_order_relaxed);
+        if (bend != appliedPitchBendParameter)
+        {
+            appliedPitchBendParameter = bend;
+            engine.setPitchBend(bend);
+            uiPitchBend.store(bend, std::memory_order_relaxed);
+        }
+        const auto wheel = performanceModWheel->load(std::memory_order_relaxed);
+        if (wheel != appliedModWheelParameter)
+        {
+            appliedModWheelParameter = wheel;
+            engine.setModWheel(wheel);
+            uiModWheel.store(wheel, std::memory_order_relaxed);
+        }
+    }
+
     if (!hadMidi && engine.getActiveVoiceCount() <= 0 && tailDrainSamplesRemaining <= 0 && !engine.hasPendingArpeggiatorEvents())
     {
         engine.advanceIdleModulators(totalSamples);
@@ -299,26 +320,6 @@ void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     auto blockPeak = 0.0f;
     auto blockInvalidSamples = 0;
     auto blockActiveVoices = 0;
-
-    // The wheel parameters (host automation or the on-screen wheels) move the sound when their value changes;
-    // MIDI wheel messages keep working on top of that.
-    if (performancePitchBend != nullptr && performanceModWheel != nullptr)
-    {
-        const auto bend = performancePitchBend->load(std::memory_order_relaxed);
-        if (bend != appliedPitchBendParameter)
-        {
-            appliedPitchBendParameter = bend;
-            engine.setPitchBend(bend);
-            uiPitchBend.store(bend, std::memory_order_relaxed);
-        }
-        const auto wheel = performanceModWheel->load(std::memory_order_relaxed);
-        if (wheel != appliedModWheelParameter)
-        {
-            appliedModWheelParameter = wheel;
-            engine.setModWheel(wheel);
-            uiModWheel.store(wheel, std::memory_order_relaxed);
-        }
-    }
 
     for (const auto metadata : midiMessages)
     {
