@@ -723,6 +723,8 @@ LibrarySettings readLibrarySettings()
             settings.hideDuplicates = static_cast<bool>(object->getProperty("hideDuplicates"));
         if (object->hasProperty("previewOnSelect"))
             settings.previewOnSelect = static_cast<bool>(object->getProperty("previewOnSelect"));
+        if (object->hasProperty("previewOnSurface"))
+            settings.previewOnSurface = static_cast<bool>(object->getProperty("previewOnSurface"));
     }
     return settings;
 }
@@ -736,6 +738,7 @@ void writeLibrarySettings(const LibrarySettings& settings)
     object->setProperty("folders", toVar(folders));
     object->setProperty("libraryFolder", juce::String::fromUTF8(utf8(settings.libraryFolder).c_str()));
     object->setProperty("previewOnSelect", settings.previewOnSelect);
+    object->setProperty("previewOnSurface", settings.previewOnSurface);
     object->setProperty("hideDuplicates", settings.hideDuplicates);
     const auto directory = libraryDataDirectory();
     std::error_code ignored;

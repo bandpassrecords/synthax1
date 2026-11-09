@@ -153,10 +153,10 @@ SynthAudioProcessor::SynthAudioProcessor()
         if (spec.presetSerialized)
             parameters.addParameterListener(juce::String(spec.id), this);
     loadMidiControllerAssignments();
-    // A new instance in a host or the standalone app starts from the last bank loaded. A host that restores a project
-    // replaces this with the saved state; tests and renders (no wrapper) keep the factory programs.
-    if (wrapperType != wrapperType_Undefined)
-        loadLastBank();
+    // A new instance in a host or the standalone app starts from the last bank loaded (see loadLastBankIfNewInstance);
+    // tests and renders (no wrapper) keep the factory programs.
+    lastBankPending = wrapperType != wrapperType_Undefined;
+    lastBankDeadlineMs = juce::Time::getMillisecondCounterHiRes() + 1500.0;
     startTimerHz(60);
 }
 
@@ -174,6 +174,16 @@ void SynthAudioProcessor::rememberLastBank(const juce::File& bank, int program) 
     const auto file = lastBankFile();
     file.getParentDirectory().createDirectory();
     file.replaceWithText(juce::JSON::toString(juce::var(object.release()), true));
+}
+
+void SynthAudioProcessor::loadLastBankIfNewInstance()
+{
+    if (!lastBankPending)
+        return;
+    lastBankPending = false;
+    const juce::ScopedLock operationLock(programLock); // a restore arriving now waits, then replaces the bank
+    if (!hostStateRestored.load(std::memory_order_acquire))
+        loadLastBank();
 }
 
 void SynthAudioProcessor::loadLastBank()
@@ -224,6 +234,13 @@ bool SynthAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) con
 void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+    {
+        auto playing = false;
+        if (auto* head = getPlayHead())
+            if (const auto position = head->getPosition())
+                playing = position->getIsPlaying();
+        hostTransportPlaying.store(playing, std::memory_order_relaxed);
+    }
     const auto totalSamples = buffer.getNumSamples();
 
     auto clearForStateUpdate = [this, &buffer, &midiMessages, totalSamples] {
@@ -1014,6 +1031,7 @@ int SynthAudioProcessor::tailDrainSamplesFor(const synth::SynthParameters& snaps
 
 juce::AudioProcessorEditor* SynthAudioProcessor::createEditor()
 {
+    loadLastBankIfNewInstance(); // so a new instance's editor opens on the last bank
     return new SynthAudioProcessorEditor(*this);
 }
 
@@ -1578,6 +1596,8 @@ int SynthAudioProcessor::readScopeSamples(float* destination, int maxSamples) co
 
 void SynthAudioProcessor::timerCallback()
 {
+    if (lastBankPending && juce::Time::getMillisecondCounterHiRes() >= lastBankDeadlineMs)
+        loadLastBankIfNewInstance(); // a new instance used without its editor
     applyPendingProgramRequest();
     applyPendingMidiLearns();
     applyPendingMappedControllers();
@@ -2424,6 +2444,7 @@ void SynthAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 
 void SynthAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
+    hostStateRestored.store(true, std::memory_order_release); // a restored instance never switches to the last bank
     const juce::ScopedLock operationLock(programLock);
     const std::span<const std::uint8_t> bytes { static_cast<const std::uint8_t*>(data),
                                                 static_cast<std::size_t>(std::max(0, sizeInBytes)) };

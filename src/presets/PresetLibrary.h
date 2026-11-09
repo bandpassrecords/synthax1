@@ -109,6 +109,7 @@ struct LibrarySettings
     std::filesystem::path libraryFolder;        // the one folder where all banks and presets live (empty: none chosen)
     std::vector<std::filesystem::path> folders; // extra folders besides the factory and user preset folders
     bool previewOnSelect = false;
+    bool previewOnSurface = true; // the main surface's own preview switch: a program change there plays middle C
     bool hideDuplicates = true; // show one entry for sounds that are identical
 };
 

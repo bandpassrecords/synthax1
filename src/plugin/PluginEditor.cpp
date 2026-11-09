@@ -190,6 +190,230 @@ juce::String formattedValue(const synth::ParameterSpec& spec, float value)
     return juce::String(value, 2) + (spec.unit == "degrees" ? " deg" : "");
 }
 
+// ---- Choice menus laid out like the reference synth's: its order and names, a small drawing of each wave before the
+// text. Only the order shown changes; each item still writes its own stable choice index.
+enum class ChoiceIcon
+{
+    None,
+    Sine,
+    Saw,
+    Ramp,
+    Triangle,
+    Pulse,
+    HalfPulse,
+    QuarterPulse,
+    TriSaw,
+    Noise,
+    SampleHold,
+    Random,
+    Step,
+    Lowpass,
+    Bandpass,
+    Highpass
+};
+
+struct ChoiceEntry
+{
+    int index;          // the parameter's choice index
+    const char* label;  // as the reference synth names it
+    ChoiceIcon icon = ChoiceIcon::None;
+    bool separatorBefore = false;
+};
+
+// The drawing of a wave or filter response in a 24 x 12 box (two empty points mark the box's corners).
+juce::Path choiceIconPath(ChoiceIcon icon)
+{
+    constexpr float w = 24.0f, h = 12.0f, top = 1.5f, bottom = h - 1.5f, mid = h * 0.5f;
+    juce::Path path;
+    const auto pulse = [&](float duty) { // one cycle, with a vertical edge at each end
+        path.startNewSubPath(0.0f, bottom);
+        path.lineTo(0.0f, top);
+        path.lineTo(w * duty, top);
+        path.lineTo(w * duty, bottom);
+        path.lineTo(w, bottom);
+        path.lineTo(w, top);
+    };
+    switch (icon)
+    {
+        case ChoiceIcon::Sine:
+            path.startNewSubPath(0.0f, mid);
+            for (int i = 1; i <= 32; ++i)
+            {
+                const auto x = w * static_cast<float>(i) / 32.0f;
+                path.lineTo(x, mid - (mid - top) * std::sin(juce::MathConstants<float>::twoPi * x / w)); // one cycle
+            }
+            break;
+        case ChoiceIcon::Saw: // as the reference draws it: a vertical edge, the fall, and a vertical edge again
+            path.startNewSubPath(0.0f, bottom);
+            path.lineTo(0.0f, top);
+            path.lineTo(w, bottom);
+            path.lineTo(w, top);
+            break;
+        case ChoiceIcon::Ramp: // rises along each cycle
+            path.startNewSubPath(0.0f, bottom);
+            path.lineTo(w * 0.5f, top);
+            path.lineTo(w * 0.5f, bottom);
+            path.lineTo(w, top);
+            break;
+        case ChoiceIcon::Triangle:
+            path.startNewSubPath(0.0f, mid);
+            path.lineTo(w * 0.25f, top);
+            path.lineTo(w * 0.75f, bottom);
+            path.lineTo(w, mid);
+            break;
+        case ChoiceIcon::Pulse: pulse(0.5f); break;
+        case ChoiceIcon::HalfPulse: pulse(0.25f); break;
+        case ChoiceIcon::QuarterPulse: pulse(0.125f); break;
+        case ChoiceIcon::TriSaw: // a slow rise, a quicker fall
+            path.startNewSubPath(0.0f, bottom);
+            path.lineTo(w * 0.35f, top);
+            path.lineTo(w * 0.5f, bottom);
+            path.lineTo(w * 0.85f, top);
+            path.lineTo(w, bottom);
+            break;
+        case ChoiceIcon::Noise:
+        {
+            const std::array<float, 13> y { 0.5f, 0.1f, 0.8f, 0.3f, 0.95f, 0.2f, 0.65f, 0.05f, 0.75f, 0.4f, 0.9f, 0.15f, 0.55f };
+            path.startNewSubPath(0.0f, top + (bottom - top) * y[0]);
+            for (std::size_t i = 1; i < y.size(); ++i)
+                path.lineTo(w * static_cast<float>(i) / static_cast<float>(y.size() - 1), top + (bottom - top) * y[i]);
+            break;
+        }
+        case ChoiceIcon::SampleHold:
+        case ChoiceIcon::Step:
+        {
+            const std::array<float, 6> random { 0.6f, 0.15f, 0.85f, 0.35f, 0.7f, 0.1f };
+            const std::array<float, 6> stairs { 0.9f, 0.7f, 0.5f, 0.3f, 0.1f, 0.9f };
+            const auto& y = icon == ChoiceIcon::Step ? stairs : random;
+            path.startNewSubPath(0.0f, top + (bottom - top) * y[0]);
+            for (std::size_t i = 0; i < y.size(); ++i)
+            {
+                const auto x0 = w * static_cast<float>(i) / static_cast<float>(y.size());
+                const auto x1 = w * static_cast<float>(i + 1) / static_cast<float>(y.size());
+                path.lineTo(x0, top + (bottom - top) * y[i]);
+                path.lineTo(x1, top + (bottom - top) * y[i]);
+            }
+            break;
+        }
+        case ChoiceIcon::Random: // smooth random
+            path.startNewSubPath(0.0f, mid);
+            path.cubicTo(w * 0.15f, top, w * 0.3f, top, w * 0.4f, mid + 1.0f);
+            path.cubicTo(w * 0.5f, bottom, w * 0.65f, bottom, w * 0.75f, mid - 2.0f);
+            path.cubicTo(w * 0.85f, top, w * 0.95f, mid, w, mid + 2.0f);
+            break;
+        case ChoiceIcon::Lowpass:
+            path.startNewSubPath(0.0f, top + 2.0f);
+            path.lineTo(w * 0.5f, top + 2.0f);
+            path.quadraticTo(w * 0.72f, top + 1.0f, w, bottom);
+            break;
+        case ChoiceIcon::Bandpass:
+            path.startNewSubPath(0.0f, bottom);
+            path.quadraticTo(w * 0.35f, bottom, w * 0.5f, top + 1.0f);
+            path.quadraticTo(w * 0.65f, bottom, w, bottom);
+            break;
+        case ChoiceIcon::Highpass:
+            path.startNewSubPath(0.0f, bottom);
+            path.quadraticTo(w * 0.28f, top + 1.0f, w * 0.5f, top + 2.0f);
+            path.lineTo(w, top + 2.0f);
+            break;
+        case ChoiceIcon::None: break;
+    }
+    // Two empty points at the corners keep every drawing the same size when scaled (they do not all reach the
+    // edges); flat line ends draw nothing for them.
+    path.startNewSubPath(0.0f, 0.0f);
+    path.startNewSubPath(w, h);
+    return path;
+}
+
+// A menu item's drawing of a wave or filter response.
+std::unique_ptr<juce::Drawable> choiceIcon(ChoiceIcon icon)
+{
+    if (icon == ChoiceIcon::None)
+        return nullptr;
+    auto drawable = std::make_unique<juce::DrawablePath>();
+    drawable->setPath(choiceIconPath(icon));
+    drawable->setFill(juce::FillType(juce::Colours::transparentBlack));
+    drawable->setStrokeFill(juce::FillType(juce::Colour(0xffe8b663)));
+    drawable->setStrokeType(juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+    return drawable;
+}
+
+// The reference synth's oscillator waves, in its order (Synthax1's choices: Saw, Pulse, Noise, Sine, Triangle,
+// SawTriangle, HalfPulse, QuarterPulse).
+const std::vector<ChoiceEntry>& oscillatorWaveLayout()
+{
+    static const std::vector<ChoiceEntry> layout {
+        { 3, "Sine", ChoiceIcon::Sine }, { 0, "Saw", ChoiceIcon::Saw }, { 4, "Triangle", ChoiceIcon::Triangle },
+        { 1, "Pulse", ChoiceIcon::Pulse }, { 6, "Half Pulse", ChoiceIcon::HalfPulse },
+        { 7, "Quarter Pulse", ChoiceIcon::QuarterPulse }, { 5, "TriSaw", ChoiceIcon::TriSaw }, { 2, "Noise", ChoiceIcon::Noise },
+    };
+    return layout;
+}
+
+// The LFO waves Synthax1 has, in the reference synth's order (choices: Sine, Triangle, SawUp, SawDown, Square,
+// SampleHold, Noise, Step). Its Half Pulse, Quarter Pulse, TriSaw and Lorenz have no Synthax1 shape yet; Step is
+// Synthax1's own.
+const std::vector<ChoiceEntry>& lfoWaveLayout()
+{
+    static const std::vector<ChoiceEntry> layout {
+        { 0, "Sine", ChoiceIcon::Sine }, { 3, "Saw", ChoiceIcon::Saw }, { 2, "Ramp", ChoiceIcon::Ramp },
+        { 1, "Triangle", ChoiceIcon::Triangle }, { 4, "Pulse", ChoiceIcon::Pulse }, { 5, "Sample And Hold", ChoiceIcon::SampleHold },
+        { 6, "Random", ChoiceIcon::Random }, { 7, "Step", ChoiceIcon::Step, true },
+    };
+    return layout;
+}
+
+// Modulation sources: the reference synth's, in its order, then Synthax1's own after a line (choice index = ModSource).
+const std::vector<ChoiceEntry>& modulationSourceLayout()
+{
+    static const std::vector<ChoiceEntry> layout {
+        { 0, "-" }, { 6, "Velocity" }, { 9, "Mod Wheel" }, { 5, "KeyTrack" }, { 4, "Amp Env A" }, { 22, "Amp Env B" },
+        { 3, "Mod Env 1" }, { 20, "Mod Env 2" }, { 1, "LFO 1" }, { 21, "LFO 2" }, { 10, "Aftertouch" }, { 23, "Step Velocity" },
+        { 2, "Ramp", ChoiceIcon::None, true }, { 7, "Velocity Glide" }, { 8, "Pitch Bend" }, { 11, "Voice (uni)" },
+        { 12, "Voice (bi)" }, { 13, "Unison (uni)" }, { 14, "Unison (bi)" }, { 15, "Random On Note" },
+        { 16, "Macro 1" }, { 17, "Macro 2" }, { 18, "Macro 3" }, { 19, "Macro 4" },
+    };
+    return layout;
+}
+
+// The layout for a parameter's choice menu, or nullptr for a plain list in the parameter's own order.
+const std::vector<ChoiceEntry>* choiceLayoutFor(const std::string& parameterId)
+{
+    const auto endsWith = [&parameterId](const std::string& tail) {
+        return parameterId.size() >= tail.size() && parameterId.compare(parameterId.size() - tail.size(), tail.size(), tail) == 0;
+    };
+    if (endsWith("waveform") && parameterId.rfind("osc.sub", 0) != 0)
+        return &oscillatorWaveLayout();
+    if (parameterId == "lfo.shape" || parameterId == "lfo.2.shape")
+        return &lfoWaveLayout();
+    if (parameterId.rfind("transmod.", 0) == 0 && endsWith(".source"))
+        return &modulationSourceLayout();
+    return nullptr;
+}
+
+// Adds a layout's items (result id = idBase + choice index). The current item is ticked, and drawn amber when it
+// carries a drawing (the drawing takes the tick's place). `skip` leaves out choices.
+void addChoiceItems(juce::PopupMenu& menu, const std::vector<ChoiceEntry>& layout, int idBase, int current,
+                    const std::function<bool(int)>& skip = {})
+{
+    auto first = true;
+    for (const auto& entry : layout)
+    {
+        if (skip && skip(entry.index))
+            continue;
+        if (entry.separatorBefore && !first)
+            menu.addSeparator();
+        first = false;
+        juce::PopupMenu::Item item(entry.label);
+        item.itemID = idBase + entry.index;
+        item.isTicked = entry.index == current;
+        item.image = choiceIcon(entry.icon);
+        if (item.isTicked && item.image != nullptr)
+            item.colour = juce::Colour(0xffe8b663);
+        menu.addItem(std::move(item));
+    }
+}
+
 class ClassicParameterControl final : public juce::Component, public juce::DragAndDropTarget
 {
 public:
@@ -271,7 +495,7 @@ public:
         // The Filter Control knobs (cutoff, resonance, ...) read 0 to 10 with the default at 5, like the part knobs.
         const auto bipolar = specification->minimum < 0.0f && id.rfind("filter_control.", 0) != 0;
         const auto scaled = bipolar ? (position * 2.0f - 1.0f) * 10.0f : position * 10.0f;
-        return juce::String(std::abs(scaled) < 0.05f ? 0.0f : scaled, 1);
+        return juce::String(std::abs(scaled) < 0.0005f ? 0.0f : scaled, 3);
     }
     void writePhysical(float value, bool completeGesture = true)
     {
@@ -371,6 +595,20 @@ public:
                 }
                 g.setColour(juce::Colour(0xffffda99));
                 g.strokePath(curve, juce::PathStrokeType(1.2f));
+            }
+            else if (const auto* layout = choiceLayoutFor(id); style == Style::Wave && layout != nullptr)
+            {
+                // The same drawing as the wave's menu item, so the button and the list always agree.
+                const auto current = juce::roundToInt(physical());
+                const auto entry = std::find_if(layout->begin(), layout->end(), [current](const ChoiceEntry& e) { return e.index == current; });
+                if (entry != layout->end() && entry->icon != ChoiceIcon::None)
+                {
+                    auto path = choiceIconPath(entry->icon);
+                    const auto waveArea = area.reduced(5, 4);
+                    path.applyTransform(path.getTransformToScaleToFit(waveArea, false));
+                    g.setColour(juce::Colour(0xffffda99));
+                    g.strokePath(path, juce::PathStrokeType(1.3f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+                }
             }
             else if (style == Style::Wave)
             {
@@ -553,7 +791,6 @@ public:
             && event.getDistanceFromDragStart() < 4)
             showChoices();
     }
-    void mouseDoubleClick(const juce::MouseEvent&) override { reset(); }
     bool keyPressed(const juce::KeyPress& key) override
     {
         if (key == juce::KeyPress::upKey || key == juce::KeyPress::rightKey
@@ -864,6 +1101,8 @@ private:
     {
         if (specification != nullptr) publishReadout(specification->name, displayText(physical()));
     }
+    // Ctrl + click: a number goes to its middle (5 on a knob's 0-to-10 scale, 0 on a bipolar one; a whole-number
+    // control to the lower middle value, Voices 1-8 to 4); a switch or a list goes back to its Init value.
     void reset()
     {
         if (dragging && parameter != nullptr)
@@ -871,8 +1110,15 @@ private:
             parameter->endChangeGesture();
             dragging = false;
         }
-        if (specification != nullptr)
+        if (specification == nullptr || parameter == nullptr)
+            return;
+        if (specification->kind != synth::ParameterKind::Float)
+        {
             writePhysical(synth::initialParameterValue(*specification));
+            return;
+        }
+        writePhysical(specification->interval >= 1.0f ? std::floor((specification->minimum + specification->maximum) * 0.5f)
+                                                       : parameter->convertFrom0to1(0.5f));
     }
     void showChoices()
     {
@@ -880,10 +1126,15 @@ private:
         if (style == Style::Filter)
         {
             menu.addItem(1000, "Bypass", true, !filterEnabled);
-            const std::array<juce::String, 3> filterTypes { "Low Pass", "Band Pass", "High Pass" };
-            for (std::size_t i = 0; i < filterTypes.size(); ++i)
-                menu.addItem(1010 + static_cast<int>(i), filterTypes[i], true,
-                             filterEnabled && juce::roundToInt(physical()) / 2 == static_cast<int>(i));
+            const std::array<ChoiceEntry, 3> filterTypes { ChoiceEntry { 0, "Lowpass", ChoiceIcon::Lowpass },
+                                                           ChoiceEntry { 1, "Bandpass", ChoiceIcon::Bandpass },
+                                                           ChoiceEntry { 2, "Highpass", ChoiceIcon::Highpass } };
+            addChoiceItems(menu, { filterTypes.begin(), filterTypes.end() }, 1010,
+                           filterEnabled ? juce::roundToInt(physical()) / 2 : -1);
+        }
+        else if (const auto* layout = choiceLayoutFor(id))
+        {
+            addChoiceItems(menu, *layout, 1, juce::roundToInt(physical()));
         }
         else
         {
@@ -911,7 +1162,7 @@ private:
         juce::PopupMenu menu;
         if (const auto controller = owner.getLearnedMidiController(id))
             menu.addSectionHeader("Assigned to MIDI CC " + juce::String(*controller));
-        menu.addItem(1, "Reset to default");
+        menu.addItem(1, "Reset (Ctrl+click)");
         menu.addItem(2, "MIDI Learn");
         menu.addItem(3, "Forget MIDI assignment");
         menu.addItem(4, "Enter value...");
@@ -970,7 +1221,7 @@ private:
     bool dropHover = false;
 };
 
-class ClassicAction final : public juce::Component
+class ClassicAction final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     ClassicAction(juce::String labelValue, std::function<void()> function, bool displayButton,
@@ -1004,6 +1255,26 @@ public:
                 g.fillRect(box.getX(), y, 1.8f, 1.6f);
                 g.fillRect(box.getX() + 3.2f, y, box.getWidth() - 3.2f, 1.6f);
             }
+            return;
+        }
+        if (label == "preview")
+        {
+            // A small speaker: the main surface's preview switch (amber when on).
+            const auto centre = area.getCentre();
+            juce::Path speaker;
+            speaker.startNewSubPath(centre.x - 4.0f, centre.y - 1.6f);
+            speaker.lineTo(centre.x - 2.0f, centre.y - 1.6f);
+            speaker.lineTo(centre.x + 0.8f, centre.y - 4.2f);
+            speaker.lineTo(centre.x + 0.8f, centre.y + 4.2f);
+            speaker.lineTo(centre.x - 2.0f, centre.y + 1.6f);
+            speaker.lineTo(centre.x - 4.0f, centre.y + 1.6f);
+            speaker.closeSubPath();
+            const auto ink = active ? amber.darker(0.5f) : (lcd ? displayInk : lettering);
+            g.setColour(ink);
+            g.fillPath(speaker);
+            juce::Path wave;
+            wave.addCentredArc(centre.x + 1.2f, centre.y, 3.2f, 3.2f, 0.0f, 0.75f, 2.4f, true);
+            g.strokePath(wave, juce::PathStrokeType(1.1f));
             return;
         }
         if (label == "v" || label == "<" || label == ">")
@@ -1569,8 +1840,7 @@ public:
         {
             juce::PopupMenu menu;
             const auto current = juce::roundToInt(parameters[0]->convertFrom0to1(parameters[0]->getValue()));
-            for (std::size_t i = 0; i < specifications[0]->choices.size(); ++i)
-                menu.addItem(static_cast<int>(i) + 1, specifications[0]->choices[i], true, static_cast<int>(i) == current);
+            addChoiceItems(menu, lfoWaveLayout(), 1, current);
             menu.showMenuAsync(optionsAtMouse(), [safe = juce::Component::SafePointer<LfoCurveDisplay>(this)](int result) {
                 if (result <= 0 || safe == nullptr || safe->parameters[0] == nullptr)
                     return;
@@ -2132,15 +2402,13 @@ private:
         rebuild();
         repaint();
     }
-    // The sources the free slots can take: every source except the four that have their own panel.
+    // The sources the free slots can take: every source except "none" and the four that have their own panel.
     void addSourceItems(juce::PopupMenu& menu, int idBase, int current) const
     {
-        const auto* spec = synth::findParameterSpec("transmod.5.source");
-        if (spec == nullptr)
-            return;
-        for (int i = 1; i < static_cast<int>(spec->choices.size()); ++i)
-            if (i != fixedModulationSource(1) && i != fixedModulationSource(2) && i != fixedModulationSource(3) && i != fixedModulationSource(4))
-                menu.addItem(idBase + i, spec->choices[static_cast<std::size_t>(i)], true, i == current);
+        addChoiceItems(menu, modulationSourceLayout(), idBase, current, [](int i) {
+            return i == 0 || i == fixedModulationSource(1) || i == fixedModulationSource(2) || i == fixedModulationSource(3)
+                || i == fixedModulationSource(4);
+        });
     }
     void chooseSlotSource(int slot)
     {
@@ -2251,11 +2519,20 @@ public:
     // Ctrl+Z undoes and Ctrl+Y (or Ctrl+Shift+Z) redoes parameter edits, without limit.
     bool keyPressed(const juce::KeyPress& key) override
     {
-        // Up and down step through the programs of the selected bank (not while the browser is open over the surface).
-        if ((key == juce::KeyPress::upKey || key == juce::KeyPress::downKey) && browserPanel == nullptr)
+        // Up and down move to the previous and next bank (1 to 4, the same place in it); left and right step through the
+        // programs of the selected bank. Not while the browser is open over the surface.
+        if (browserPanel == nullptr)
         {
-            stepProgram(key == juce::KeyPress::downKey ? 1 : -1);
-            return true;
+            if (key == juce::KeyPress::upKey || key == juce::KeyPress::downKey)
+            {
+                stepBank(key == juce::KeyPress::downKey ? 1 : -1);
+                return true;
+            }
+            if (key == juce::KeyPress::leftKey || key == juce::KeyPress::rightKey)
+            {
+                stepProgram(key == juce::KeyPress::rightKey ? 1 : -1);
+                return true;
+            }
         }
         const auto control = key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown();
         if (!control)
@@ -2362,7 +2639,14 @@ private:
     void loadFile(bool bank);
     void saveFile(bool bank, std::function<void()> afterSave = {});
     void stepProgram(int direction);
+    void stepBank(int direction);
+    void goToProgram(int target);
     void previewProgram();
+    void togglePreviewOnSurface();
+    juce::TooltipWindow tooltips { this, 400 }; // the preview and browser buttons explain themselves after 400 ms
+    // The program name on the LCD, between the bank buttons and the arrows; the preview switch and the list
+    // button sit inside it, left and right.
+    static inline const juce::Rectangle<int> nameBox { 364, 160, 220, 18 }; // centred between the bank buttons (to 357) and the arrows (from 591)
     int previewSerial = 0;
     bool previewSounding = false;
     void writeParameter(const std::string& id, float physical);
@@ -2625,7 +2909,14 @@ void SynthAudioProcessorEditor::ClassicSurface::lcdControls()
     action("<", 591, 160, 15, 18, [this] { juce::String message; if (owner.previousProgram(message)) previewProgram(); announce("Program", message); }, true, "Previous program");
     action(">", 607, 160, 15, 18, [this] { juce::String message; if (owner.nextProgram(message)) previewProgram(); announce("Program", message); }, true, "Next program");
     action("MENU", 286, 180, 85, 17, [this] { programMenu(); }, true, "Program menu");
-    action("list", 569, 161, 17, 16, [this] { openPresetBrowser(); }, true, "Preset browser");
+    action("list", nameBox.getRight() - 21, 161, 17, 16, [this] { openPresetBrowser(); }, true, "Preset browser")
+        ->setTooltip("Open the preset browser");
+    const auto previewOn = synth::readLibrarySettings().previewOnSurface;
+    auto* preview = action("preview", nameBox.getX() + 3, 161, 17, 16, [this] { togglePreviewOnSurface(); }, true,
+                           "Play a preview on program change", true);
+    preview->setSelected(previewOn);
+    preview->setTooltip(previewOn ? "Preview on: a program change here plays middle C (not while the host plays). Click to turn off."
+                                  : "Preview off. Click to play middle C on each program change here.");
     const std::array<juce::String, 8> names { "ARPEG", "DISTORT", "PHASER", "CHORUS", "EQ", "DELAY", "REVERB", "COMPRESS" };
     const std::array<juce::String, 8> pageTitles { "Arpeggiator", "Distortion", "Phaser", "Chorus", "Equalizer", "Delay", "Reverb", "Compressor" };
     const std::array<std::string, 8> enabled { "arp.enabled", "fx.saturation_enabled", "fx.phaser_enabled", "fx.chorus_enabled", "fx.eq_enabled", "fx.delay_enabled", "fx.reverb_enabled", "fx.compressor_enabled" };
@@ -2792,10 +3083,10 @@ void SynthAudioProcessorEditor::ClassicSurface::paint(juce::Graphics& g)
     g.drawRect(286, 160, 337, 164, 1);
     g.drawVerticalLine(372, 179, 324);
     g.drawHorizontalLine(197, 286, 623);
-    recessedField(g, { 358, 160, 232, 18 }, juce::Colour(0xff638ba0));
+    recessedField(g, nameBox.toFloat(), juce::Colour(0xff638ba0));
     const auto program = owner.getCurrentProgram();
     drawText(g, juce::String(program % 128 + 1).paddedLeft('0', 3) + ": " + owner.getCurrentPresetName(),
-             { 361, 160, 229, 18 }, 12, juce::Colour(0xffe1edf1), juce::Justification::centred, true);
+             nameBox.withTrimmedLeft(23).withTrimmedRight(23), 12, juce::Colour(0xffe1edf1), juce::Justification::centred, true);
     drawText(g, readoutName, { 376, 180, 181, 17 }, 11, displayInk, juce::Justification::centredLeft);
     drawText(g, readoutValue, { 554, 180, 64, 17 }, 11, displayInk, juce::Justification::centredRight);
 
@@ -2930,7 +3221,7 @@ void SynthAudioProcessorEditor::ClassicSurface::mouseDown(const juce::MouseEvent
         }
     }
     // The preset name lists the programs of the selected bank; a right click there still gives the program menu (also under MENU).
-    if (juce::Rectangle<int>(358, 160, 232, 18).contains(event.position.toInt()))
+    if (nameBox.contains(event.position.toInt()))
     {
         if (event.mods.isPopupMenu())
             programMenu();
@@ -3045,6 +3336,9 @@ void SynthAudioProcessorEditor::ClassicSurface::programMenu()
     menu.addSeparator();
     menu.addItem(12, "All notes off");
     menu.addItem(13, "Rename program...");
+    menu.addSeparator();
+    menu.addItem(14, "Open preset browser");
+    menu.addItem(15, "Preview on program change", true, synth::readLibrarySettings().previewOnSurface);
     juce::PopupMenu programs;
     for (int program = 0; program < owner.getNumPrograms(); ++program)
         programs.addItem(1000 + program, juce::String(program + 1).paddedLeft('0', 3) + ": " + owner.getProgramName(program),
@@ -3067,6 +3361,8 @@ void SynthAudioProcessorEditor::ClassicSurface::programMenu()
                            else if (result == 11) safe->saveFile(true);
                            else if (result == 12) safe->owner.requestPanic();
                            else if (result == 13) safe->renameProgram();
+                           else if (result == 14) safe->openPresetBrowser();
+                           else if (result == 15) safe->togglePreviewOnSurface();
                            else if (result >= 1000) safe->owner.selectProgram(result - 1000, message);
                            if (message.isNotEmpty()) safe->announce("Program", message);
                        });
@@ -3108,7 +3404,7 @@ void SynthAudioProcessorEditor::ClassicSurface::renameProgram()
                                 if (safe != nullptr && result == 1)
                                 {
                                     safe->owner.changeProgramName(programIndex, window->getTextEditorContents("name"));
-                                    safe->repaint(358, 160, 233, 18);
+                                    safe->repaint(nameBox.expanded(1, 0));
                                 }
                             }),
                             true);
@@ -3128,14 +3424,27 @@ void SynthAudioProcessorEditor::ClassicSurface::loadFile(bool bank)
                                  safe->announce("Load", message);
                              });
 }
-// Moves to the next or previous program of the selected bank (wrapping inside it). An edited program asks first:
-// save it as a preset, discard the edits, or stay.
+// Moves to the next or previous program of the selected bank (wrapping inside it).
 void SynthAudioProcessorEditor::ClassicSurface::stepProgram(int direction)
 {
     constexpr int programsPerBank = 128;
     const auto current = owner.getCurrentProgram();
     const auto first = current / programsPerBank * programsPerBank;
-    const auto target = first + (current - first + direction + programsPerBank) % programsPerBank;
+    goToProgram(first + (current - first + direction + programsPerBank) % programsPerBank);
+}
+
+// Moves to the next or previous bank (wrapping from 4 to 1), at the same place in it, as the bank buttons do.
+void SynthAudioProcessorEditor::ClassicSurface::stepBank(int direction)
+{
+    constexpr int programsPerBank = 128, banks = 4;
+    const auto current = owner.getCurrentProgram();
+    const auto bank = (current / programsPerBank + direction + banks) % banks;
+    goToProgram(bank * programsPerBank + current % programsPerBank);
+}
+
+// Selects a program from the surface. An edited program asks first: save it as a preset, discard the edits, or stay.
+void SynthAudioProcessorEditor::ClassicSurface::goToProgram(int target)
+{
     const auto step = [safe = juce::Component::SafePointer<ClassicSurface>(this), target] {
         if (safe == nullptr)
             return;
@@ -3171,11 +3480,20 @@ void SynthAudioProcessorEditor::ClassicSurface::stepProgram(int direction)
     ownedWindow.release(); // JUCE owns the modal window until its callback completes.
 }
 
-// With PLAY PREVIEW on (the browser's switch), a program chosen on the surface plays middle C for a moment, as in the browser.
+void SynthAudioProcessorEditor::ClassicSurface::togglePreviewOnSurface()
+{
+    auto settings = synth::readLibrarySettings();
+    settings.previewOnSurface = !settings.previewOnSurface;
+    synth::writeLibrarySettings(settings);
+    buildControls();
+    announce("Preview", settings.previewOnSurface ? "On: a program change plays middle C" : "Off");
+}
+
+// With the surface's preview switch on, a program chosen on the surface plays middle C for a moment, as in the browser.
 void SynthAudioProcessorEditor::ClassicSurface::previewProgram()
 {
-    if (!synth::readLibrarySettings().previewOnSelect)
-        return;
+    if (!synth::readLibrarySettings().previewOnSurface || owner.isHostTransportPlaying())
+        return; // while the host plays, the track's notes are the preview
     if (previewSounding)
         owner.submitUiMidiMessage(juce::MidiMessage::noteOff(1, 60));
     owner.submitUiMidiMessage(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)));
@@ -3262,7 +3580,7 @@ void SynthAudioProcessorEditor::ClassicSurface::timerCallback()
     if (preset != lastPreset)
     {
         lastPreset = preset;
-        repaint(358, 160, 233, 18);
+        repaint(nameBox.expanded(1, 0));
     }
 }
 

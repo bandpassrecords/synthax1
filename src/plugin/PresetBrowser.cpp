@@ -263,7 +263,7 @@ public:
         previewButton.setToggleState(settings.previewOnSelect, juce::dontSendNotification);
         previewButton.setColour(juce::ToggleButton::textColourId, textColour);
         previewButton.setColour(juce::ToggleButton::tickColourId, accentColour);
-        previewButton.onClick = [this] { settings.previewOnSelect = previewButton.getToggleState(); synth::writeLibrarySettings(settings); };
+        previewButton.onClick = [this] { settings.previewOnSelect = previewButton.getToggleState(); saveSettings(); };
         addAndMakeVisible(previewButton);
 
         duplicatesButton.setButtonText("HIDE DUPLICATES");
@@ -272,7 +272,7 @@ public:
         duplicatesButton.setColour(juce::ToggleButton::tickColourId, accentColour);
         duplicatesButton.onClick = [this] {
             settings.hideDuplicates = duplicatesButton.getToggleState();
-            synth::writeLibrarySettings(settings);
+            saveSettings();
             rebuildSide();
             applyFilter();
         };
@@ -536,7 +536,7 @@ private:
             // The play icon: load this preset for a moment and hear it.
             table.selectRow(row);
             selectedEntry = index;
-            auditionSelected();
+            auditionSelected(true);
         }
         else if (event.mods.isPopupMenu())
         {
@@ -574,8 +574,7 @@ private:
         updateDetails();
         if (ignoreSelection)
             return;
-        if (settings.previewOnSelect)
-            auditionSelected();
+        auditionSelected(settings.previewOnSelect && !owner.isHostTransportPlaying());
     }
 
     // ---- left list ------------------------------------------------------------------------------------------------
@@ -958,9 +957,10 @@ private:
     }
 
     // ---- actions --------------------------------------------------------------------------------------------------
-    // A single click only selects. With Play Preview on it also loads the preset for a moment and plays middle C;
-    // the sound that was loaded before is put back when the browser closes without a double click.
-    void auditionSelected()
+    // A single click loads the preset for a moment, so the track's MIDI (or the keyboard) plays it; the sound that was
+    // loaded before is put back when the browser closes without a double click. With Play Preview on, a middle C plays
+    // too, unless the host is playing (the track's notes are the preview then). The play icon always plays it.
+    void auditionSelected(bool playNote)
     {
         if (selectedEntry < 0)
             return;
@@ -970,7 +970,8 @@ private:
         {
             auditioning = true;
             statusText = "Previewing: " + text(entry.name) + "   (double click to select)";
-            playPreview();
+            if (playNote)
+                playPreview();
         }
         else
             statusText = message;
@@ -1016,6 +1017,12 @@ private:
     }
 
     void timerCallback() override { stopPreview(); }
+
+    void saveSettings()
+    {
+        settings.previewOnSurface = synth::readLibrarySettings().previewOnSurface; // owned by the main surface
+        synth::writeLibrarySettings(settings);
+    }
 
     void toggleFavorite(int index)
     {
@@ -1067,7 +1074,7 @@ private:
                                  if (folder != juce::File())
                                  {
                                      settings.libraryFolder = pathFrom(folder.getFullPathName());
-                                     synth::writeLibrarySettings(settings);
+                                     saveSettings();
                                      startLoading();
                                  }
                              });
@@ -1097,7 +1104,7 @@ private:
             else if (result == 11)
             {
                 settings.libraryFolder.clear();
-                synth::writeLibrarySettings(settings);
+                saveSettings();
                 startLoading();
             }
             else if (result == 1)
@@ -1109,7 +1116,7 @@ private:
                                          if (folder != juce::File())
                                          {
                                              settings.folders.push_back(pathFrom(folder.getFullPathName()));
-                                             synth::writeLibrarySettings(settings);
+                                             saveSettings();
                                              startLoading();
                                          }
                                      });
@@ -1117,7 +1124,7 @@ private:
             else if (result >= 100 && result < 100 + static_cast<int>(settings.folders.size()))
             {
                 settings.folders.erase(settings.folders.begin() + (result - 100));
-                synth::writeLibrarySettings(settings);
+                saveSettings();
                 startLoading();
             }
             else if (result == 2)

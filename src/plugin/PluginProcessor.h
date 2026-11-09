@@ -67,6 +67,9 @@ public:
     float getEffectiveParameterValue(const juce::String& parameterId) const noexcept;
     std::optional<int> getLearnedMidiController(const juce::String& parameterId) const;
     bool submitUiMidiMessage(const juce::MidiMessage& message) noexcept;
+    // Whether the host's transport was playing at the last audio block (false without a host transport). A preset
+    // preview does not play its middle C then, so the track's own MIDI is heard with the preset alone.
+    bool isHostTransportPlaying() const noexcept { return hostTransportPlaying.load(std::memory_order_relaxed); }
     synth::ParameterHistory& getParameterHistory() noexcept { return parameterHistory; }
     // Notes currently held by incoming MIDI (host, on-screen keys, controllers), for the keyboard display.
     bool isNoteHeld(int note) const noexcept
@@ -466,6 +469,13 @@ private:
     static juce::File lastBankFile();
     void rememberLastBank(const juce::File& bank, int program) const;
     void loadLastBank();
+    // A new instance starts from the last bank; a restored one keeps its state. The host restores a project's state
+    // right after creating the instance, so the last bank waits until the editor first opens (or a moment passes)
+    // and is skipped once any state has been restored.
+    void loadLastBankIfNewInstance();
+    bool lastBankPending = false;                  // message thread only
+    double lastBankDeadlineMs = 0.0;
+    std::atomic<bool> hostStateRestored { false }; // set by setStateInformation, from whichever thread the host uses
     void publishMidiControllerAssignments();
     bool assignMidiControllerInternal(int controllerNumber,
                                       const juce::String& parameterId,
@@ -506,6 +516,7 @@ private:
     std::array<float, scratchCapacity> scratchRight {};
     std::atomic<double> diagnosticSampleRate { 0.0 };
     std::atomic<int> diagnosticBlockSize { 0 };
+    std::atomic<bool> hostTransportPlaying { false };
     std::atomic<int> diagnosticActiveVoices { 0 };
     std::atomic<int> diagnosticMidiEvents { 0 };
     std::atomic<int> diagnosticInvalidSamples { 0 };

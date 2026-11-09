@@ -11,7 +11,7 @@ A virtual analog synthesizer plugin for Windows, macOS and Linux (VST3, plus AU 
 - **Sound matched by measurement.** Oscillators, unison, filters, drive, envelopes, LFOs, the arpeggiator, reverb and distortion were compared with the original through offline renders and fitted to the measurements. The method, the numbers and the remaining gaps are in [docs/SOUND_PARITY.md](docs/SOUND_PARITY.md).
 - **A preset browser for big libraries.** Point it at one folder and it finds every bank and preset below it, treats them alike, and lists them by category, pack, vendor or tag, with search, favorites, notes, duplicate hiding and an optional middle C preview. A library of 279,000 programs lists in seconds from a cache.
 - **Automation for everything.** Every control is a host parameter, including the pitch bend and mod wheel, and a right click offers the host's own automation menu.
-- **Unlimited undo and redo** of parameter edits (Ctrl+Z, Ctrl+Y), Ctrl+click to reset a control to its Init value, and knob readouts on the familiar 0 to 10 scale.
+- **Unlimited undo and redo** of parameter edits (Ctrl+Z, Ctrl+Y), Ctrl+click to reset a knob to its middle (a switch or list to its Init value), and knob readouts on the familiar 0 to 10 scale with three decimals.
 
 ![The preset browser](docs/assets/preset-browser.png)
 

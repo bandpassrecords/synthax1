@@ -109,9 +109,9 @@ The owned program bank contains four sub-banks of 128 slots. It supports selecti
 
 In the preset browser, a single click previews only the chosen program. Choosing a program for good (double click or Enter) that comes from a bank loads the whole bank into the program slots, from slot 1, and selects that program. A preset file, or a program file that holds one program alone, loads only that preset into the current slot.
 
-On the main surface, the up and down arrow keys step to the next and previous program of the selected bank, wrapping inside it. An unedited program steps at once; an edited one first asks to save it as a preset, discard the edits, or cancel. A click on the program name lists the selected bank's programs to pick from.
+On the main surface, the up and down arrow keys move to the previous and next bank (1 to 4, wrapping), at the same place in it, and the left and right arrow keys step to the previous and next program of the selected bank, wrapping inside it. An unedited program changes at once; an edited one first asks to save it as a preset, discard the edits, or cancel. A click on the program name lists the selected bank's programs to pick from.
 
-A new instance (in a host or the standalone app) starts from the last bank loaded in any instance, at the program chosen when it was loaded. A host project or saved standalone state that is restored afterwards replaces it. Tests and offline renders do not read it.
+A new instance (in a host or the standalone app) starts from the last bank loaded in any instance, at the program chosen when it was loaded. An instance whose state is restored (a reopened host project, a saved standalone session) keeps that state and never loads the last bank: the bank waits until the editor first opens, or 1.5 s without an editor, and is skipped once any state has been restored. Tests and offline renders do not read it.
 
 MIDI program changes select the first 128 programs as documented by the original manual. Program-change requests arriving on the audio thread MUST be published through a bounded handoff; parsing, bank editing, and parameter-tree replacement run outside the audio callback. Pending older requests MUST NOT overwrite a newer host restore.
 
