@@ -276,6 +276,14 @@ void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     engine.setParameters(parameterSnapshot);
     drainUiMidiMessages();
+    // The LFOs that run without a note (free, mono or song) keep a single phase; the others run per voice.
+    const auto runsAlone = [](const synth::LfoParameters& lfo) noexcept {
+        return lfo.free || lfo.mono || lfo.gateMode == synth::LfoGateMode::Mono || lfo.gateMode == synth::LfoGateMode::Song;
+    };
+    const auto usesMonoLfo = runsAlone(parameterSnapshot.lfo);
+    const auto usesMonoLfo2 = runsAlone(parameterSnapshot.lfo2);
+    uiLfoRateHz[0].store(synth::lfoBaseRateHz(parameterSnapshot.lfo, parameterSnapshot.sync, parameterSnapshot.tempoBpm), std::memory_order_relaxed);
+    uiLfoRateHz[1].store(synth::lfoBaseRateHz(parameterSnapshot.lfo2, parameterSnapshot.sync, parameterSnapshot.tempoBpm), std::memory_order_relaxed);
 
     // The wheel parameters (host automation or the on-screen wheels) move the sound when their value changes;
     // MIDI wheel messages keep working on top of that. This runs before the idle return, so a wheel moved (or let go)
@@ -310,6 +318,11 @@ void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         uiLfoPhase.store(engine.getMonoLfoPhase(), std::memory_order_relaxed);
         uiLfoValue.store(engine.getMonoLfoValue(), std::memory_order_relaxed);
         uiLfoVoiceActive.store(false, std::memory_order_relaxed);
+        // With no note, only the LFOs that run alone move (advanceIdleModulators keeps them going).
+        uiLfoRunning[0].store(usesMonoLfo, std::memory_order_relaxed);
+        uiLfoCursorPhase[0].store(engine.getMonoLfoPhase(), std::memory_order_relaxed);
+        uiLfoRunning[1].store(usesMonoLfo2, std::memory_order_relaxed);
+        uiLfoCursorPhase[1].store(engine.getMonoLfo2Phase(), std::memory_order_relaxed);
         return;
     }
 
@@ -339,10 +352,7 @@ void SynthAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     blockInvalidSamples += finalStats.invalidSamples;
     blockActiveVoices = finalStats.activeVoices;
 
-    const auto usesMonoLfo = parameterSnapshot.lfo.free || parameterSnapshot.lfo.mono
-        || parameterSnapshot.lfo.gateMode == synth::LfoGateMode::Mono
-        || parameterSnapshot.lfo.gateMode == synth::LfoGateMode::Song;
-    publishUiVisuals(buffer, totalSamples, blockActiveVoices, usesMonoLfo);
+    publishUiVisuals(buffer, totalSamples, blockActiveVoices, usesMonoLfo, usesMonoLfo2);
 
     diagnosticPeak.store(blockPeak, std::memory_order_relaxed);
     diagnosticPeakLeft.store(buffer.getNumChannels() > 0 ? buffer.getMagnitude(0, 0, totalSamples) : 0.0f, std::memory_order_relaxed);
@@ -1524,7 +1534,7 @@ void SynthAudioProcessor::requestPanic() noexcept
 }
 
 void SynthAudioProcessor::publishUiVisuals(const juce::AudioBuffer<float>& buffer, int totalSamples,
-                                           int activeVoices, bool usesMonoLfo) noexcept
+                                           int activeVoices, bool usesMonoLfo, bool usesMonoLfo2) noexcept
 {
     if (buffer.getNumChannels() > 0 && totalSamples > 0)
     {
@@ -1542,6 +1552,7 @@ void SynthAudioProcessor::publishUiVisuals(const juce::AudioBuffer<float>& buffe
     }
 
     auto published = false;
+    auto published2 = false;
     if (activeVoices > 0)
     {
         if (usesMonoLfo)
@@ -1550,22 +1561,61 @@ void SynthAudioProcessor::publishUiVisuals(const juce::AudioBuffer<float>& buffe
             uiLfoValue.store(engine.getMonoLfoValue(), std::memory_order_relaxed);
             published = true;
         }
+        if (usesMonoLfo2)
+        {
+            uiLfoCursorPhase[1].store(engine.getMonoLfo2Phase(), std::memory_order_relaxed);
+            published2 = true;
+        }
 
-        for (int index = 0; index < 32 && !published; ++index)
+        // A per-voice LFO shows the newest note's voice and stays with it until another note starts, so letting go of a
+        // note does not jump the display to the phase of a voice that is still releasing.
+        auto firstActive = -1;
+        for (int index = 0; index < static_cast<int>(uiSeenRetriggers.size()); ++index)
         {
             const auto* voice = engine.getVoice(index);
             if (voice == nullptr)
                 break;
             if (!voice->isActive())
                 continue;
-
+            if (firstActive < 0)
+                firstActive = index;
+            const auto retriggers = voice->snapshot().retriggers;
+            if (retriggers != uiSeenRetriggers[static_cast<std::size_t>(index)])
+            {
+                uiSeenRetriggers[static_cast<std::size_t>(index)] = retriggers;
+                uiShownVoice = index; // a note started (or restarted) this voice
+            }
+        }
+        const auto* shown = uiShownVoice >= 0 ? engine.getVoice(uiShownVoice) : nullptr;
+        if (shown == nullptr || !shown->isActive())
+            uiShownVoice = firstActive;
+        if (const auto* voice = uiShownVoice >= 0 ? engine.getVoice(uiShownVoice) : nullptr; voice != nullptr && !(published && published2))
+        {
+            const auto index = uiShownVoice;
             const auto voiceState = voice->snapshot();
-            uiLfoPhase.store(voiceState.lfoPhase, std::memory_order_relaxed);
-            uiLfoValue.store(voiceState.lfo, std::memory_order_relaxed);
-            published = true;
+            // Another voice, or this one restarted by a note: either way the wave shown starts again.
+            const auto restarts = voiceState.retriggers * 64u + static_cast<std::uint32_t>(index);
+            if (!published)
+            {
+                uiLfoPhase.store(voiceState.lfoPhase, std::memory_order_relaxed);
+                uiLfoValue.store(voiceState.lfo, std::memory_order_relaxed);
+                uiLfoRestarts[0].store(restarts, std::memory_order_relaxed);
+                published = true;
+            }
+            if (!published2)
+            {
+                uiLfoCursorPhase[1].store(voiceState.lfo2Phase, std::memory_order_relaxed);
+                uiLfoRestarts[1].store(restarts, std::memory_order_relaxed);
+                published2 = true;
+            }
         }
     }
     uiLfoVoiceActive.store(published, std::memory_order_relaxed);
+    uiLfoRunning[0].store(published || usesMonoLfo, std::memory_order_relaxed);
+    uiLfoCursorPhase[0].store(uiLfoPhase.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    uiLfoRunning[1].store(published2 || usesMonoLfo2, std::memory_order_relaxed);
+    if (!published2 && usesMonoLfo2)
+        uiLfoCursorPhase[1].store(engine.getMonoLfo2Phase(), std::memory_order_relaxed);
 }
 
 SynthAudioProcessor::UiVisualSnapshot SynthAudioProcessor::getUiVisualSnapshot() const noexcept
@@ -1576,6 +1626,9 @@ SynthAudioProcessor::UiVisualSnapshot SynthAudioProcessor::getUiVisualSnapshot()
     snapshot.lfoValue = uiLfoValue.load(std::memory_order_relaxed);
     snapshot.pitchBend = uiPitchBend.load(std::memory_order_relaxed);
     snapshot.modWheel = uiModWheel.load(std::memory_order_relaxed);
+    for (std::size_t lfo = 0; lfo < snapshot.lfos.size(); ++lfo)
+        snapshot.lfos[lfo] = { uiLfoRunning[lfo].load(std::memory_order_relaxed), uiLfoCursorPhase[lfo].load(std::memory_order_relaxed),
+                               uiLfoRateHz[lfo].load(std::memory_order_relaxed), uiLfoRestarts[lfo].load(std::memory_order_relaxed) };
     return snapshot;
 }
 

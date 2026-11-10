@@ -178,6 +178,15 @@ public:
         float lfoValue = 0.0f;
         float pitchBend = 0.0f;
         float modWheel = 0.0f;
+        // For each LFO's display cursor: whether it runs (a note sounds, or it runs free), its phase and its rate.
+        struct LfoCursor
+        {
+            bool running = false;
+            float phase = 0.0f;
+            float rateHz = 0.0f;
+            std::uint32_t restarts = 0; // changes when a note restarts the wave shown
+        };
+        std::array<LfoCursor, 2> lfos {};
     };
     UiVisualSnapshot getUiVisualSnapshot() const noexcept;
     // Copies the most recent output-scope samples (oldest first). Returns the
@@ -495,7 +504,7 @@ private:
     void applyMappedControllerValue(int parameterIndex, int controllerValue);
     void setMidiControllerStatus(const juce::String& status);
     void publishUiVisuals(const juce::AudioBuffer<float>& buffer, int totalSamples,
-                          int activeVoices, bool usesMonoLfo) noexcept;
+                          int activeVoices, bool usesMonoLfo, bool usesMonoLfo2) noexcept;
 
     juce::AudioProcessorValueTreeState parameters;
     synth::SynthEngine engine;
@@ -530,6 +539,13 @@ private:
     std::atomic<bool> uiLfoVoiceActive { false };
     std::atomic<float> uiLfoPhase { 0.0f };
     std::atomic<float> uiLfoValue { 0.0f };
+    std::array<std::atomic<bool>, 2> uiLfoRunning {};
+    std::array<std::atomic<float>, 2> uiLfoCursorPhase {};
+    std::array<std::atomic<float>, 2> uiLfoRateHz {};
+    std::array<std::atomic<std::uint32_t>, 2> uiLfoRestarts {};
+    // The voice whose LFOs the displays follow, and each voice's restart count when last seen (audio thread only).
+    int uiShownVoice = -1;
+    std::array<std::uint32_t, 32> uiSeenRetriggers {};
     std::atomic<float> uiPitchBend { 0.0f };
     std::atomic<float> uiModWheel { 0.0f };
     int tailDrainSamplesRemaining = 0;

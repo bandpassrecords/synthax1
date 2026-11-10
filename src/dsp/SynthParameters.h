@@ -376,6 +376,39 @@ struct LfoParameters
     }();
 };
 
+// The length of an LFO sync division in beats (the division's choice index).
+inline float syncDivisionBeats(int division) noexcept
+{
+    switch (division)
+    {
+        case 0: return 0.25f;
+        case 1: return 0.5f;
+        case 2: return 0.75f;
+        case 3: return 1.0f;
+        case 4: return 2.0f;
+        case 5: return 4.0f;
+        case 6: return 1.0f / 12.0f;
+        case 7: return 0.1875f;
+        case 8: return 1.0f / 6.0f;
+        case 9: return 0.375f;
+        case 10: return 1.0f / 3.0f;
+        case 11: return 2.0f / 3.0f;
+        case 12: return 1.5f;
+        case 13: return 4.0f / 3.0f;
+        case 14: return 3.0f;
+        case 15: return 0.125f;
+        case 16: return 8.0f / 3.0f;
+        case 17: return 6.0f;
+        default: return 1.0f;
+    }
+}
+
+// The LFO's rate before modulation: its own rate when free or unsynced, else its division at the tempo.
+inline float lfoBaseRateHz(const LfoParameters& settings, bool sync, float tempoBpm) noexcept
+{
+    return settings.free || !sync ? settings.rateHz : tempoBpm / (60.0f * syncDivisionBeats(settings.syncDivision));
+}
+
 struct MacroParameters
 {
     float motion = 0.5f;

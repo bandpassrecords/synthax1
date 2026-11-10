@@ -1786,7 +1786,7 @@ class LfoCurveDisplay final : public ModulationDisplay
 public:
     LfoCurveDisplay(SynthAudioProcessor& processor, const std::string& prefix, const std::string& rateId, int slot,
                     ReadoutCallback readoutCallback)
-        : owner(processor), idPrefix(prefix), colour(modulationColour(slot)), readout(std::move(readoutCallback))
+        : owner(processor), idPrefix(prefix), lfoIndex(slot == 4 ? 1 : 0), colour(modulationColour(slot)), readout(std::move(readoutCallback))
     {
         auto& state = processor.getValueTreeState();
         const std::array<std::string, 6> ids { prefix + "shape", prefix + "gain", prefix + "offset", rateId, prefix + "free",
@@ -1807,24 +1807,58 @@ public:
     void refresh() override
     {
         const auto next = currentSignature();
-        if (next != signature)
+        auto changed = next != signature;
+        signature = next;
+        // The cursor follows the LFO while it runs; this is the surface's only moving drawing, and it stops with the LFO.
+        const auto lfo = owner.getUiVisualSnapshot().lfos[static_cast<std::size_t>(lfoIndex)];
+        auto nextCursor = -1.0f;
+        const auto nextFast = lfo.running && lfo.rateHz > maxFollowedRateHz;
+        if (lfo.running && !nextFast)
         {
-            signature = next;
-            repaint();
+            // The drawing holds two cycles (the step pattern holds one): a finished cycle moves on into the other half,
+            // and a note that restarts the wave brings the cursor back to the left.
+            if (!wasRunning || lfo.restarts != lastRestarts)
+                secondCycle = false;
+            else if (lfo.phase < lastPhase)
+                secondCycle = !secondCycle;
+            nextCursor = stepMode() ? lfo.phase : (lfo.phase + (secondCycle ? 1.0f : 0.0f)) * 0.5f;
         }
+        wasRunning = lfo.running && !nextFast;
+        lastPhase = lfo.phase;
+        lastRestarts = lfo.restarts;
+        if (nextFast != fast || (nextCursor < 0.0f) != (cursor < 0.0f) || std::abs(nextCursor - cursor) * plotArea().getWidth() >= 0.5f)
+        {
+            fast = nextFast;
+            cursor = nextCursor;
+            changed = true;
+        }
+        if (changed)
+            repaint();
     }
 
     void paint(juce::Graphics& g) override
     {
         displayPlate(g, getLocalBounds().toFloat().reduced(1.0f));
         const auto plot = plotArea();
+        if (fast) // too fast for the screen to follow: a steady tint says it runs
+        {
+            g.setColour(colour.withAlpha(0.07f));
+            g.fillRect(plot);
+        }
         const auto centreY = plot.getCentreY();
         const auto half = plot.getHeight() * 0.5f;
         g.setColour(juce::Colours::white.withAlpha(0.09f));
         g.drawHorizontalLine(juce::roundToInt(centreY), plot.getX(), plot.getRight());
 
         if (stepMode())
+        {
             paintSteps(g, plot);
+            if (cursor >= 0.0f)
+            {
+                const auto column = juce::jlimit(0, stepCount() - 1, static_cast<int>(cursor * static_cast<float>(stepCount())));
+                paintCursor(g, plot, centreY - juce::jlimit(-1.0f, 1.0f, stepValue(column)) * half);
+            }
+        }
         else
         {
             g.drawVerticalLine(juce::roundToInt(plot.getCentreX()), plot.getY(), plot.getBottom());
@@ -1846,6 +1880,11 @@ public:
             g.fillPath(fill);
             g.setColour(colour);
             g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            if (cursor >= 0.0f)
+            {
+                const auto index = juce::jlimit<std::size_t>(0, points.size() - 1, static_cast<std::size_t>(cursor * static_cast<float>(points.size() - 1) + 0.5f));
+                paintCursor(g, plot, centreY - juce::jlimit(-1.0f, 1.0f, gain * (points[index] + offset)) * half);
+            }
             for (int dot = 0; dot < 2; ++dot)
             {
                 const auto point = dotPosition(dot);
@@ -1961,6 +2000,18 @@ public:
 
 private:
     enum class Mode { None, Shape, Free, Gain, Offset, Rate, Steps, StepCount };
+    // Above this rate the screen (30 updates a second) can no longer follow the cursor.
+    static constexpr float maxFollowedRateHz = 10.0f;
+    void paintCursor(juce::Graphics& g, juce::Rectangle<float> plot, float y) const
+    {
+        const auto x = plot.getX() + cursor * plot.getWidth();
+        g.setColour(juce::Colours::white.withAlpha(0.45f));
+        g.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
+        g.setColour(juce::Colour(0xff0b0e0f));
+        g.fillEllipse(x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(x - 2.5f, y - 2.5f, 5.0f, 5.0f);
+    }
     static int parameterOf(Mode mode)
     {
         switch (mode)
@@ -2117,6 +2168,13 @@ private:
 
     SynthAudioProcessor& owner;
     std::string idPrefix;
+    int lfoIndex = 0;
+    float cursor = -1.0f; // position across the drawing, 0 to 1; negative when the LFO does not run
+    float lastPhase = 0.0f;
+    std::uint32_t lastRestarts = 0;
+    bool wasRunning = false;
+    bool secondCycle = false;
+    bool fast = false;
     std::array<juce::RangedAudioParameter*, 6> parameters {};
     std::array<const synth::ParameterSpec*, 6> specifications {};
     std::array<juce::RangedAudioParameter*, synth::lfoMaxSteps> stepParameters {};

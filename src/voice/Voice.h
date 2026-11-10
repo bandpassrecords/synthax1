@@ -45,6 +45,8 @@ struct VoiceSnapshot
     float transModAmpLevelDb = 0.0f;
     float transModPan = 0.0f;
     float lfoPhase = 0.0f;
+    float lfo2Phase = 0.0f;
+    std::uint32_t retriggers = 0; // counts the notes that restarted this voice (and its LFOs, unless free)
 };
 
 struct LfoFrame
@@ -169,6 +171,7 @@ private:
     std::array<FilterParameters, layerCount> preparedPartFilters;
     Envelope modEnvelope2;
     Lfo lfo2;
+    std::uint32_t retriggers = 0;
     std::array<float, nativeModDestinationCount> nativeModulation {};
     float nativeModEnv2Value = 0.0f;
     float nativeAmpEnv2Value = 0.0f;

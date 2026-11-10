@@ -33,31 +33,6 @@ EnvelopeSettings toEnvelopeSettings(EnvelopeParameters parameters) noexcept
     return { parameters.attackMs, parameters.decayMs, parameters.sustain, parameters.releaseMs };
 }
 
-float syncDivisionBeats(int division) noexcept
-{
-    switch (division)
-    {
-        case 0: return 0.25f;
-        case 1: return 0.5f;
-        case 2: return 0.75f;
-        case 3: return 1.0f;
-        case 4: return 2.0f;
-        case 5: return 4.0f;
-        case 6: return 1.0f / 12.0f;
-        case 7: return 0.1875f;
-        case 8: return 1.0f / 6.0f;
-        case 9: return 0.375f;
-        case 10: return 1.0f / 3.0f;
-        case 11: return 2.0f / 3.0f;
-        case 12: return 1.5f;
-        case 13: return 4.0f / 3.0f;
-        case 14: return 3.0f;
-        case 15: return 0.125f;
-        case 16: return 8.0f / 3.0f;
-        case 17: return 6.0f;
-        default: return 1.0f;
-    }
-}
 
 float clampFast(float value, float minimum, float maximum) noexcept
 {
@@ -190,6 +165,7 @@ void Voice::noteOn(int note, float normalizedVelocity, float randomValue,
     syncModulatorConfig(parameters);
     if (shouldRetrigger)
     {
+        ++retriggers;
         {
             for (auto& envelope : partAmpEnvelopes) envelope.noteOn();
             modEnvelope2.noteOn();
@@ -993,7 +969,9 @@ VoiceSnapshot Voice::snapshot() const noexcept
         lastTransModSums.filterCutoffSemitones,
         lastTransModSums.ampLevelDb,
         lastTransModSums.pan,
-        lfo.getPhase()
+        lfo.getPhase(),
+        lfo2.getPhase(),
+        retriggers
     };
 }
 } // namespace synth
