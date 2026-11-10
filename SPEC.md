@@ -70,7 +70,7 @@ The two part amp envelopes independently shape the filtered output. A releasing 
 
 ### Modulation
 
-Two modulation envelopes and two LFOs MUST be independently configurable. LFO controls include shape, rate, gain, offset, free-running behavior, and host sync. Selected-version waveform coverage MUST be verified from actual references; unverified names or counts MUST NOT be fabricated.
+Two modulation envelopes and two LFOs MUST be independently configurable. LFO controls include shape, rate, gain, offset, free-running behavior, and host sync. As on the reference synth, FREE is an on/off lamp switch: a free LFO is not restarted by notes and does not follow the host tempo. Its rate knob reads 0.042 to 192.00 Hz on an exponential curve. With Sync on and FREE off, the same knob steps through the 36 divisions from 8/1D (slowest) to 1/256T (fastest). Selected-version waveform coverage MUST be verified from actual references; unverified names or counts MUST NOT be fabricated.
 
 Modulation includes the original performance/miscellaneous sources and signed destination amounts. The routing model, host state, preset state, and actual realtime destinations MUST agree. Both source slots of each original panel MUST be independently editable. Global/free LFO phase advances during silence and changes to rate/sync/free state MUST take effect without unintended resets.
 

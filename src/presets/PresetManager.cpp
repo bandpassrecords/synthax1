@@ -592,7 +592,7 @@ std::int64_t quantizedFingerprintValue(const ParameterSpec& spec, float physical
     if (spec.kind == ParameterKind::Choice)
         return static_cast<std::int64_t>(std::round(physicalValue));
 
-    const juce::NormalisableRange<float> range { spec.minimum, spec.maximum, spec.interval, spec.skew };
+    const auto range = parameterRange(spec);
     const auto snapped = range.snapToLegalValue(physicalValue);
     if (spec.interval > 0.0f)
         return static_cast<std::int64_t>(std::llround((static_cast<double>(snapped) - spec.minimum) / spec.interval));

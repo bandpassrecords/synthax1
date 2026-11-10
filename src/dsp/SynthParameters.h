@@ -399,6 +399,24 @@ inline float syncDivisionBeats(int division) noexcept
         case 15: return 0.125f;
         case 16: return 8.0f / 3.0f;
         case 17: return 6.0f;
+        case 18: return 48.0f; // 8/1D
+        case 19: return 32.0f;
+        case 20: return 64.0f / 3.0f;
+        case 21: return 24.0f; // 4/1D
+        case 22: return 16.0f;
+        case 23: return 32.0f / 3.0f;
+        case 24: return 12.0f; // 2/1D
+        case 25: return 8.0f;
+        case 26: return 16.0f / 3.0f;
+        case 27: return 0.09375f; // 1/64D
+        case 28: return 0.0625f;
+        case 29: return 1.0f / 24.0f;
+        case 30: return 0.046875f; // 1/128D
+        case 31: return 0.03125f;
+        case 32: return 1.0f / 48.0f;
+        case 33: return 0.0234375f; // 1/256D
+        case 34: return 0.015625f;
+        case 35: return 1.0f / 96.0f;
         default: return 1.0f;
     }
 }

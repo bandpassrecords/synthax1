@@ -27,6 +27,8 @@ struct ParameterSpec
     float defaultValue = 0.0f;
     float interval = 0.0f;
     float skew = 1.0f;
+    // The value grows by the same factor for each step of the knob (minimum x (maximum / minimum)^position); skew is unused.
+    bool exponential = false;
     bool automatable = true;
     bool presetSerialized = true;
     float smoothMs = 0.0f;
@@ -61,6 +63,8 @@ inline int findChoice(const ParameterSpec& spec, const std::string& label) noexc
 }
 
 const std::vector<ParameterSpec>& getParameterSpecs();
+// The host-facing range of a float parameter: linear with skew, or exponential.
+juce::NormalisableRange<float> parameterRange(const ParameterSpec& spec);
 const ParameterSpec* findParameterSpec(const std::string& id);
 float clampPhysicalParameterValue(const ParameterSpec& spec, float value) noexcept;
 std::vector<std::string> validateParameterSpecs();

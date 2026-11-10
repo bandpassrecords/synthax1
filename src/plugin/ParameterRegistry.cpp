@@ -45,6 +45,12 @@ ParameterSpec boolParam(std::string id, std::string name, std::string group, boo
     return spec;
 }
 
+ParameterSpec exponentialParam(ParameterSpec spec)
+{
+    spec.exponential = true;
+    return spec;
+}
+
 ParameterSpec withFormerChoices(ParameterSpec spec, std::vector<std::pair<std::string, int>> formerChoices)
 {
     spec.formerChoices = std::move(formerChoices);
@@ -142,8 +148,15 @@ std::vector<ParameterSpec> buildSpecs()
 
         choiceParam("lfo.shape", "LFO Shape", "lfo", { "Sine", "Triangle", "SawUp", "SawDown", "Square", "SampleHold", "Noise", "Step" }, 3),
         choiceParam("lfo.rate_mode", "LFO Rate Mode", "lfo", { "Hz", "Sync" }, 1),
-        floatParam("lfo.rate_hz", "LFO Rate", "lfo", "Hz", 0.01f, 200.0f, 2.0f, 0.0001f, 0.35f),
-        choiceParam("lfo.sync_division", "LFO Sync Division", "lfo", { "1/16", "1/8", "1/8D", "1/4", "1/2", "1 bar", "1/32T", "1/32D", "1/16T", "1/16D", "1/8T", "1/4T", "1/4D", "1/2T", "1/2D", "1/32", "1 barT", "1 barD" }, 3),
+        // MEASURED (docs/LEGACY_IMPORT.md): the reference synth's free LFO rate is 0.0417 e^(8.435 x), 0.042 to 192 Hz.
+        exponentialParam(floatParam("lfo.rate_hz", "LFO Rate", "lfo", "Hz", 0.0417f, 192.0f, 2.0f, 0.0001f)),
+        // The divisions of the reference synth, 8/1D to 1/256T. Indices 0 to 17 keep their meaning; the rest were appended.
+        withFormerChoices(choiceParam("lfo.sync_division", "LFO Sync Division", "lfo",
+                                      { "1/16", "1/8", "1/8D", "1/4", "1/2", "1/1", "1/32T", "1/32D", "1/16T", "1/16D", "1/8T", "1/4T",
+                                        "1/4D", "1/2T", "1/2D", "1/32", "1/1T", "1/1D", "8/1D", "8/1", "8/1T", "4/1D", "4/1", "4/1T",
+                                        "2/1D", "2/1", "2/1T", "1/64D", "1/64", "1/64T", "1/128D", "1/128", "1/128T", "1/256D", "1/256",
+                                        "1/256T" }, 3),
+                          { { "1 bar", 5 }, { "1 barT", 16 }, { "1 barD", 17 } }),
         floatParam("lfo.phase_degrees", "LFO Phase", "lfo", "degrees", 0.0f, 360.0f, 0.0f, 0.01f),
         choiceParam("lfo.gate_mode", "LFO Gate Mode", "lfo", { "Poly", "PolyOn", "Mono", "Song" }, 1),
         boolParam("lfo.mono", "LFO Mono", "lfo", false),
@@ -473,6 +486,16 @@ const std::vector<ParameterSpec>& getParameterSpecs()
     return specs;
 }
 
+juce::NormalisableRange<float> parameterRange(const ParameterSpec& spec)
+{
+    if (!spec.exponential || spec.minimum <= 0.0f || spec.maximum <= spec.minimum)
+        return { spec.minimum, spec.maximum, spec.interval, spec.skew };
+    return { spec.minimum, spec.maximum,
+             [](float start, float end, float position) { return start * std::pow(end / start, juce::jlimit(0.0f, 1.0f, position)); },
+             [](float start, float end, float value) { return std::log(juce::jlimit(start, end, value) / start) / std::log(end / start); },
+             [](float start, float end, float value) { return juce::jlimit(start, end, value); } };
+}
+
 const ParameterSpec* findParameterSpec(const std::string& id)
 {
     static const auto index = [] {
@@ -563,7 +586,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
         if (spec.kind == ParameterKind::Float)
         {
-            juce::NormalisableRange<float> range { spec.minimum, spec.maximum, spec.interval, spec.skew };
+            const auto range = parameterRange(spec);
             parameters.push_back(std::make_unique<juce::AudioParameterFloat>(parameterId, name, range, initialParameterValue(spec)));
         }
         else if (spec.kind == ParameterKind::Bool)

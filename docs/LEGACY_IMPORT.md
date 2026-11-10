@@ -110,7 +110,7 @@ Import notes appear only for settings that can be heard: a routed LFO or mod env
 | ~2,500 | Pitch/Phase A or B modulate both oscillators of a part; shown on the first oscillator, with hidden depths for the second | add part-wide destinations to `modulationDestinationCatalog()` (UI only; sound is already correct) |
 | ~1,300 | EQ boost above +12 dB | widen `fx.eq_*_gain_db` to +15 dB |
 | ~1,100 | pitch modulation deeper than ±48 semitones | widen pitch depth to ±120 |
-| ~2,200 | LFO or phaser division longer than 1 bar (the reference synth: up to 8/1D) | append 2, 4 and 8 bar divisions to the sync choice lists and the DSP division table |
+| not recounted (~2,200 together with the LFOs) | Phaser division longer than 1 bar (the reference synth: up to 8/1D). The LFOs now have every division from 8/1D to 1/256T, imported exactly. | append 2, 4 and 8 bar divisions to `fx.phaser_sync_division` |
 | 609 | `Dist Amount` mod destination | add a distortion-amount destination |
 | 568 | EQ 2-pole mode | add a slope option to the EQ |
 | 344 | LFO above 40 Hz | widen `lfo.rate_hz` |

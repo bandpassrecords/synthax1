@@ -33,6 +33,8 @@ EnvelopeSettings toEnvelopeSettings(EnvelopeParameters parameters) noexcept
     return { parameters.attackMs, parameters.decayMs, parameters.sustain, parameters.releaseMs };
 }
 
+// The free LFO knob reaches 192 Hz; rate modulation may push a little past it.
+constexpr float maxLfoRateHz = 200.0f;
 
 float clampFast(float value, float minimum, float maximum) noexcept
 {
@@ -360,8 +362,8 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
         return settings.free || !parameters.sync ? settings.rateHz
                                                  : tempo / (60.0f * syncDivisionBeats(settings.syncDivision));
     };
-    const auto baseRate1 = clampFast(rate(parameters.lfo, parameters.tempoBpm), 0.01f, 100.0f);
-    const auto baseRate2 = clampFast(rate(parameters.lfo2, parameters.tempoBpm), 0.01f, 100.0f);
+    const auto baseRate1 = clampFast(rate(parameters.lfo, parameters.tempoBpm), 0.01f, maxLfoRateHz);
+    const auto baseRate2 = clampFast(rate(parameters.lfo2, parameters.tempoBpm), 0.01f, maxLfoRateHz);
     const auto interval = clampIntFast(parameters.modulationIntervalSamples, 1, renderBlockMaxSamples);
     const auto exactPath = interval == 1;
 
@@ -393,8 +395,8 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
         nativeAmpEnv2Value = ampValues[1];
         if (exactPath)
         {
-            const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, 100.0f);
-            const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, 100.0f);
+            const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, maxLfoRateHz);
+            const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, maxLfoRateHz);
             lfo.setRateHz(effectiveRate1);
             lfo2.setRateHz(effectiveRate2);
             const auto* monoLfoValue = monoLfoValues != nullptr ? &monoLfoValues[i] : nullptr;
@@ -479,8 +481,8 @@ int Voice::renderBlock(const SynthParameters& parameters, const VoiceModPlan& pl
             if (controlCountdown <= 0)
             {
                 const auto elapsed = static_cast<float>(controlPrimed ? interval : 1);
-                const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, 100.0f);
-                const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, 100.0f);
+                const auto effectiveRate1 = clampFast(baseRate1 + destination(NativeModDestination::Lfo1Rate), 0.01f, maxLfoRateHz);
+                const auto effectiveRate2 = clampFast(baseRate2 + destination(NativeModDestination::Lfo2Rate), 0.01f, maxLfoRateHz);
                 lfo.setRateHz(effectiveRate1);
                 lfo2.setRateHz(effectiveRate2);
                 if (monoLfoValue != nullptr)

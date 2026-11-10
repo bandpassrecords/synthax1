@@ -491,6 +491,15 @@ public:
         if (parameter == nullptr || specification == nullptr)
             juce::Logger::writeToLog("Synthax1 editor has no parameter binding for: " + juce::String(id));
         jassert(parameter != nullptr && specification != nullptr);
+        if (specification != nullptr && specification->kind == synth::ParameterKind::Choice && id.rfind("lfo.", 0) == 0
+            && id.ends_with("sync_division"))
+        {
+            // The stored order keeps old presets; the knob turns from the slowest division (8/1D) to the fastest (1/256T).
+            for (int index = 0; index < static_cast<int>(specification->choices.size()); ++index)
+                knobOrder.push_back(index);
+            std::stable_sort(knobOrder.begin(), knobOrder.end(),
+                             [](int a, int b) { return synth::syncDivisionBeats(a) > synth::syncDivisionBeats(b); });
+        }
         findModulationTarget();
         updateValue();
     }
@@ -518,7 +527,7 @@ public:
             }
         }
         refreshModulation();
-        const auto next = parameter->getValue();
+        const auto next = knobPosition();
         if (std::abs(next - normalized) > 0.0000001f)
         {
             normalized = next;
@@ -526,7 +535,28 @@ public:
             if (auto* handler = getAccessibilityHandler()) handler->notifyAccessibilityEvent(juce::AccessibilityEvent::valueChanged);
         }
     }
-    float physical() const { return parameter != nullptr ? parameter->convertFrom0to1(normalized) : 0; }
+    float physical() const
+    {
+        if (parameter == nullptr)
+            return 0.0f;
+        return parameter->convertFrom0to1(knobOrder.empty() ? normalized : parameter->getValue());
+    }
+    // Where the knob points, 0 to 1: the parameter's own position, or the choice's rank in knobOrder.
+    float knobPosition() const
+    {
+        if (parameter == nullptr)
+            return 0.0f;
+        if (knobOrder.empty())
+            return parameter->getValue();
+        const auto index = juce::roundToInt(parameter->convertFrom0to1(parameter->getValue()));
+        const auto rank = std::find(knobOrder.begin(), knobOrder.end(), index) - knobOrder.begin();
+        return static_cast<float>(rank) / static_cast<float>(knobOrder.size() - 1);
+    }
+    void writeKnobRank(int rank)
+    {
+        rank = juce::jlimit(0, static_cast<int>(knobOrder.size()) - 1, rank);
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(knobOrder[static_cast<std::size_t>(rank)])));
+    }
     // Knobs and faders read 0 to 10 (or -10 to 10 when the control goes both ways), as on the reference synth.
     juce::String displayText(float physicalValue) const
     {
@@ -534,6 +564,8 @@ public:
         if (specification == nullptr || parameter == nullptr || !knobStyle || specification->kind != synth::ParameterKind::Float
             || specification->interval >= 1.0f)
             return specification != nullptr ? formattedValue(*specification, physicalValue) : juce::String();
+        if (specification->exponential && specification->unit == "Hz") // the free LFO rate: 0.042 to 192.00 Hz
+            return juce::String(physicalValue, physicalValue < 1.0f ? 3 : 2) + " Hz";
         const auto position = parameter->convertTo0to1(physicalValue);
         // The Filter Control knobs (cutoff, resonance, ...) read 0 to 10 with the default at 5, like the part knobs.
         const auto bipolar = specification->minimum < 0.0f && id.rfind("filter_control.", 0) != 0;
@@ -824,9 +856,13 @@ public:
             if (angle < juce::MathConstants<float>::pi) angle += juce::MathConstants<float>::twoPi;
             next = juce::jlimit(0.0f, 1.0f, (angle / juce::MathConstants<float>::pi - 1.22f) / 1.56f);
         }
-        const auto physicalValue = parameter->convertFrom0to1(next);
-        const auto snapped = parameter->convertTo0to1(physicalValue);
-        parameter->setValueNotifyingHost(snapped);
+        if (!knobOrder.empty())
+            writeKnobRank(juce::roundToInt(next * static_cast<float>(knobOrder.size() - 1)));
+        else
+        {
+            const auto physicalValue = parameter->convertFrom0to1(next);
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(physicalValue));
+        }
         updateValue();
         announce();
     }
@@ -846,6 +882,15 @@ public:
             || key == juce::KeyPress::downKey || key == juce::KeyPress::leftKey)
         {
             const auto direction = (key == juce::KeyPress::upKey || key == juce::KeyPress::rightKey) ? 1.0f : -1.0f;
+            if (!knobOrder.empty())
+            {
+                parameter->beginChangeGesture();
+                writeKnobRank(juce::roundToInt(normalized * static_cast<float>(knobOrder.size() - 1)) + static_cast<int>(direction));
+                parameter->endChangeGesture();
+                updateValue();
+                announce();
+                return true;
+            }
             writePhysical(physical() + direction * (specification->interval > 0 ? specification->interval : (specification->maximum - specification->minimum) * 0.01f));
             return true;
         }
@@ -1288,6 +1333,7 @@ private:
     juce::RangedAudioParameter* parameter = nullptr;
     const synth::ParameterSpec* specification = nullptr;
     float normalized = -1;
+    std::vector<int> knobOrder; // choice indices in knob order, for choices stored out of order (the LFO sync list)
     float dragStart = 0;
     bool dragging = false;
     bool filterEnabled = true;
@@ -1898,9 +1944,9 @@ public:
             }
         }
 
-        const auto free = value(4) >= 0.5f;
         drawChip(g, chip(Mode::Shape), shapeName(), false);
-        drawChip(g, chip(Mode::Free), free ? "FREE" : "SYNC", free);
+        // The FREE switch (a control laid over the display's top right corner) carries this label.
+        drawText(g, "FREE", freeLabelArea().toNearestInt(), 7.5f, lettering, juce::Justification::centredRight);
         if (stepMode())
             drawChip(g, chip(Mode::StepCount), "<  " + juce::String(stepCount()) + "  >", false);
     }
@@ -1956,16 +2002,7 @@ public:
         repaint();
         if (event.getDistanceFromDragStart() > 3)
             return;
-        if (mode == Mode::Free)
-        {
-            if (auto* parameter = parameters[4])
-            {
-                parameter->beginChangeGesture();
-                parameter->setValueNotifyingHost(parameter->getValue() >= 0.5f ? 0.0f : 1.0f);
-                parameter->endChangeGesture();
-            }
-        }
-        else if (mode == Mode::StepCount && parameters[5] != nullptr)
+        if (mode == Mode::StepCount && parameters[5] != nullptr)
         {
             const auto area = chip(Mode::StepCount);
             const auto delta = event.position.x < area.getCentreX() ? -1 : 1;
@@ -2043,10 +2080,17 @@ private:
         switch (mode)
         {
             case Mode::Shape: return { plot.getX() + 1, 4.0f, 48.0f, 10.0f };
-            case Mode::StepCount: return { plot.getRight() - 80, 4.0f, 40.0f, 10.0f };
-            default: return { plot.getRight() - 37, 4.0f, 36.0f, 10.0f };
+            case Mode::StepCount: return { plot.getX() + 52, 4.0f, 34.0f, 10.0f };
+            default: return {};
         }
     }
+    juce::Rectangle<float> freeLabelArea() const { return { plotArea().getRight() - 52, 3.0f, 26.0f, 12.0f }; }
+
+public:
+    // Where the FREE switch sits, in the display's coordinates.
+    juce::Rectangle<int> freeSwitchArea() const { return { juce::roundToInt(plotArea().getRight()) - 24, 2, 24, 14 }; }
+
+private:
     juce::Point<float> dotPosition(int dot) const
     {
         const auto plot = plotArea();
@@ -2056,7 +2100,6 @@ private:
     Mode modeAt(juce::Point<float> position) const
     {
         if (chip(Mode::Shape).expanded(1.0f).contains(position)) return Mode::Shape;
-        if (chip(Mode::Free).expanded(1.0f).contains(position)) return Mode::Free;
         if (stepMode())
         {
             if (chip(Mode::StepCount).expanded(1.0f).contains(position)) return Mode::StepCount;
@@ -3030,9 +3073,14 @@ void SynthAudioProcessorEditor::ClassicSurface::lfo(int number, int x)
         && owner.getEffectiveParameterValue(prefix + "free") < 0.5f;
     const auto rateId = prefix + (synchronized ? "sync_division" : "rate_hz");
     const auto stepShape = juce::roundToInt(owner.getEffectiveParameterValue(prefix + "shape")) == 7;
-    addDisplay(std::make_unique<LfoCurveDisplay>(owner, prefix, rateId, number + 2,
-                                                 [this](const juce::String& name, const juce::String& value) { announce(name, value); }),
-               x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 80);
+    auto display = std::make_unique<LfoCurveDisplay>(owner, prefix, rateId, number + 2,
+                                                     [this](const juce::String& name, const juce::String& value) { announce(name, value); });
+    const auto displayBounds = juce::Rectangle<int>(x + 4, modulationPanelTop + 19, modulationPanelWidth - 8, 80);
+    display->setBounds(displayBounds);
+    const auto freeArea = display->freeSwitchArea().translated(displayBounds.getX(), displayBounds.getY());
+    addDisplay(std::move(display), displayBounds.getX(), displayBounds.getY(), displayBounds.getWidth(), displayBounds.getHeight());
+    // Free: the LFO runs on its own, not restarted by notes and not synced to the host tempo.
+    add(prefix + "free", "Free", Style::Switch, freeArea.getX(), freeArea.getY(), freeArea.getWidth(), freeArea.getHeight());
     const auto y = modulationPanelTop + 101;
     add(rateId, "RATE", Style::Knob, x + 4, y, 40, 53);
     add(prefix + "gain", "GAIN", Style::Knob, x + 45, y, 40, 53);

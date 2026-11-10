@@ -521,10 +521,11 @@ void mapLfo(Builder& b, const std::string& prefix, int number, F free, F gain, F
     b.set(prefix + "offset", bipolar(b.raw(offset)) * b.raw(gain));
     b.flag(prefix + "free", b.on(free));
     // Free-running LFOs ignore Sync; otherwise Sync selects tempo divisions.
+    // The LFO sync list holds every division of the reference synth, under the same labels.
     if (synced && !b.on(free))
-        b.chooseDivision(prefix + "sync_division", lfoDivisionAt(b.raw(rate)), "LFO " + std::to_string(number) + " rate");
+        b.choose(prefix + "sync_division", lfoDivisionAt(b.raw(rate)));
     else
-        b.setHz(prefix + "rate_hz", curves::lfoHz(b.raw(rate)), 0.01f, 200.0f, "LFO " + std::to_string(number) + " rate");
+        b.setHz(prefix + "rate_hz", curves::lfoHz(b.raw(rate)), 0.0417f, 192.0f, "LFO " + std::to_string(number) + " rate");
 }
 
 void mapVoiceAndGlobal(Builder& b, bool synced)
