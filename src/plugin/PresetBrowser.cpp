@@ -4,7 +4,9 @@
 #include "../presets/PresetLibrary.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
+#include <set>
 #include <random>
 #include <unordered_map>
 
@@ -96,13 +98,15 @@ std::string lowerCase(const std::string& value)
     return juce::String::fromUTF8(value.c_str()).toLowerCase().toStdString();
 }
 
-constexpr int columnName = 1, columnLocation = 2, columnCategory = 3, columnDate = 4, columnFavorite = 5;
+constexpr int columnName = 1, columnLocation = 2, columnCategory = 3, columnDate = 4, columnFavorite = 5, columnProgram = 6;
 
 // Whether the details panel was open; it stays the same the next time the browser opens.
 bool detailsShown = false;
 
-// The special rows of the left list. Favorites and Loose presets are groups that open into one row per category.
-constexpr int rowAll = 1, rowFavorites = 2, rowLoose = 3, rowFavoriteCategory = 4, rowLooseCategory = 5;
+// The special rows of the left list. Favorites and Loose presets are groups that open into one row per category. In the
+// BANK tab every bank is a row that shows the whole bank and opens into All plus one row per category of that bank.
+constexpr int rowAll = 1, rowFavorites = 2, rowLoose = 3, rowFavoriteCategory = 4, rowLooseCategory = 5, rowBank = 6, rowBankCategory = 7;
+constexpr bool isBankRow(int special) { return special == rowBank || special == rowBankCategory; }
 constexpr int categoryRowOf(int group) { return group == rowFavorites ? rowFavoriteCategory : rowLooseCategory; }
 constexpr int groupOf(int categoryRow) { return categoryRow == rowFavoriteCategory ? rowFavorites : rowLoose; }
 constexpr bool isCategoryRow(int special) { return special == rowFavoriteCategory || special == rowLooseCategory; }
@@ -112,6 +116,11 @@ constexpr bool isGroup(int special) { return special == rowFavorites || special 
 bool favoritesOpen = true;
 bool looseOpen = false;
 bool& groupOpen(int group) { return group == rowFavorites ? favoritesOpen : looseOpen; }
+// The banks that are open, by key (a bank file's path, or "pack:" and the name of a group of separate files).
+std::set<std::string> openBanks;
+
+constexpr std::uint32_t noBankFile = std::numeric_limits<std::uint32_t>::max();
+constexpr std::uint32_t allCategories = std::numeric_limits<std::uint32_t>::max(); // the All row of an open bank
 
 enum class SideMode
 {
@@ -130,6 +139,10 @@ struct SideItem
     int count = 0;
     int special = 0;          // 0 an ordinary row, else one of the row constants above (a category row keeps its category in id)
     bool hasChildren = false; // a group with category rows to show
+    // Bank rows: the bank's name and, for a bank file, its file index (a group of separate files, such as a folder of
+    // loose .fxp files, has none). `tag` holds the bank's key.
+    std::uint32_t bank = 0;
+    std::uint32_t bankFile = noBankFile;
 };
 
 void drawStar(juce::Graphics& g, juce::Rectangle<float> area, bool filled, juce::Colour colour)
@@ -215,7 +228,7 @@ public:
         addAndMakeVisible(searchBox);
         searchDelay.action = [this] { applyFilter(); };
 
-        for (const auto& [mode, title] : { std::pair { SideMode::Categories, "CATEGORY" }, std::pair { SideMode::Banks, "PACK" },
+        for (const auto& [mode, title] : { std::pair { SideMode::Categories, "CATEGORY" }, std::pair { SideMode::Banks, "BANK" },
                                            std::pair { SideMode::Vendors, "VENDOR" }, std::pair { SideMode::Tags, "TAGS" } })
         {
             auto* tab = tabs.add(new juce::TextButton(title));
@@ -256,6 +269,7 @@ public:
         header.setColour(juce::TableHeaderComponent::outlineColourId, juce::Colour(0xff343836));
         header.addColumn("FAV", columnFavorite, 40, 40, 40,
                          juce::TableHeaderComponent::notResizable | juce::TableHeaderComponent::visible | juce::TableHeaderComponent::sortable);
+        header.addColumn("#", columnProgram, 44, 36, 60, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("NAME", columnName, 300, 120, 600, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("LOCATION", columnLocation, 220, 80, 500, juce::TableHeaderComponent::defaultFlags);
         header.addColumn("CATEGORY", columnCategory, 100, 60, 200, juce::TableHeaderComponent::defaultFlags);
@@ -570,6 +584,15 @@ private:
             g.setColour(selected ? selectedTextColour : textColour);
             g.drawText(text(entry.name), left, 0, width - left - 4, height, juce::Justification::centredLeft, true);
         }
+        else if (columnId == columnProgram)
+        {
+            // A program's place in its bank, counted from 1; a preset file has none.
+            if (entry.kind == synth::LibraryKind::LegacyProgram && !entry.loose)
+            {
+                g.setColour(selected ? selectedTextColour : dimTextColour);
+                g.drawText(juce::String(entry.programIndex + 1), 2, 0, width - 8, height, juce::Justification::centredRight, true);
+            }
+        }
         else if (columnId == columnLocation)
             g.drawText(text(data->text(entry.location)), 6, 0, width - 8, height, juce::Justification::centredLeft, true);
         else if (columnId == columnCategory)
@@ -675,6 +698,8 @@ private:
 
     void sortOrderChanged(int newSortColumnId, bool isForwards) override
     {
+        if (newSortColumnId == sortColumn && isForwards == sortForwards && !shuffled)
+            return; // already in this order (a bank chosen on the left sorts by program number itself)
         sortColumn = newSortColumnId;
         sortForwards = isForwards;
         shuffled = false;
@@ -715,13 +740,13 @@ private:
                 g.fillRect(0, 0, width, height);
             }
             // Group rows carry an arrow that opens and closes them; their category rows sit indented below.
-            const auto heading = item.special != 0 && !isCategoryRow(item.special);
-            const auto indent = isCategoryRow(item.special) ? 30 : (item.special != 0 ? 20 : 12);
-            if (isGroup(item.special) && item.hasChildren)
+            const auto heading = item.special != 0 && !isCategoryRow(item.special) && !isBankRow(item.special);
+            const auto indent = isCategoryRow(item.special) || item.special == rowBankCategory ? 30 : (item.special != 0 ? 20 : 12);
+            if ((isGroup(item.special) || item.special == rowBank) && item.hasChildren)
             {
                 juce::Path arrow;
                 const auto centre = juce::Point<float>(10.0f, static_cast<float>(height) * 0.5f);
-                if (groupOpen(item.special))
+                if (item.special == rowBank ? openBanks.count(item.tag) > 0 : groupOpen(item.special))
                     arrow.addTriangle(centre.x - 4.0f, centre.y - 2.0f, centre.x + 4.0f, centre.y - 2.0f, centre.x, centre.y + 3.0f);
                 else
                     arrow.addTriangle(centre.x - 2.0f, centre.y - 4.0f, centre.x - 2.0f, centre.y + 4.0f, centre.x + 3.0f, centre.y);
@@ -740,7 +765,28 @@ private:
             if (owner.rebuildingSide || lastRow < 0 || lastRow >= getNumRows())
                 return;
             owner.sideSelection = owner.sideItems[static_cast<std::size_t>(lastRow)];
+            // A bank lists its programs in bank order (the # column); a click on another column sorts by that instead.
+            if (isBankRow(owner.sideSelection.special) && !owner.shuffled
+                && (owner.sortColumn != columnProgram || !owner.sortForwards))
+            {
+                owner.sortColumn = columnProgram;
+                owner.sortForwards = true;
+                owner.resort();
+                owner.table.getHeader().setSortColumnId(columnProgram, true);
+            }
             owner.applyFilter();
+            if (owner.selectedEntry < 0 && !owner.rows.empty())
+                owner.table.scrollToEnsureRowIsOnscreen(0);
+        }
+        // Long names are cut short in the narrow list; the tooltip shows the whole name and, for a bank file, its path.
+        juce::String getTooltipForRow(int row) override
+        {
+            if (row < 0 || row >= getNumRows())
+                return {};
+            const auto& item = owner.sideItems[static_cast<std::size_t>(row)];
+            if (item.special == rowBank && item.bankFile != noBankFile)
+                return item.label + "\n" + juce::String::fromUTF8(item.tag.c_str());
+            return item.label;
         }
         // A click on a group's arrow, or a double click on the group's name, opens or closes it.
         void listBoxItemClicked(int row, const juce::MouseEvent& event) override
@@ -799,6 +845,13 @@ private:
 
     void toggleGroup(const SideItem& item)
     {
+        if (item.special == rowBank && item.hasChildren)
+        {
+            if (openBanks.erase(item.tag) == 0)
+                openBanks.insert(item.tag);
+            rebuildSide();
+            return;
+        }
         if (!isGroup(item.special) || !item.hasChildren)
             return;
         groupOpen(item.special) = !groupOpen(item.special);
@@ -853,7 +906,9 @@ private:
         sideItems.push_back({ "All presets", 0, {}, shown, rowAll });
         addGroup("Favorites", favorites, rowFavorites, favoriteCategories);
         addGroup("Loose presets", loose, rowLoose, looseCategories);
-        if (sideMode == SideMode::Tags)
+        if (sideMode == SideMode::Banks)
+            addBankRows();
+        else if (sideMode == SideMode::Tags)
         {
             std::map<std::string, int> counts;
             for (std::size_t i = 0; i < data->entries.size(); ++i)
@@ -891,11 +946,23 @@ private:
             const auto& item = sideItems[i];
             if (isCategoryRow(item.special) && item.special == sideSelection.special && item.id == sideSelection.id)
                 select = static_cast<int>(i);
-            else if (item.special == sideSelection.special && item.special != 0 && !isCategoryRow(item.special))
+            else if (isBankRow(item.special) && item.special == sideSelection.special && item.tag == sideSelection.tag
+                     && (item.special == rowBank || item.id == sideSelection.id))
+                select = static_cast<int>(i);
+            else if (item.special == sideSelection.special && item.special != 0 && !isCategoryRow(item.special) && !isBankRow(item.special))
                 select = static_cast<int>(i);
             else if (sideSelection.special == 0 && item.special == 0
                      && ((sideMode == SideMode::Tags && item.tag == sideSelection.tag) || (sideMode != SideMode::Tags && item.id == sideSelection.id)))
                 select = static_cast<int>(i);
+        }
+        if (select < 0 && sideSelection.special == rowBankCategory)
+        {
+            // A closed bank: its own row shows the whole bank.
+            for (std::size_t i = 0; i < sideItems.size(); ++i)
+                if (sideItems[i].special == rowBank && sideItems[i].tag == sideSelection.tag)
+                    select = static_cast<int>(i);
+            if (select >= 0)
+                sideSelectionMoved = true;
         }
         if (select < 0)
         {
@@ -905,11 +972,102 @@ private:
             for (std::size_t i = 0; i < sideItems.size(); ++i)
                 if (sideItems[i].special == fallback)
                     select = static_cast<int>(i);
-            sideSelection = sideItems[static_cast<std::size_t>(select)];
             sideSelectionMoved = true;
         }
+        // Taken from the new row: after a rescan a bank's file index can change.
+        sideSelection = sideItems[static_cast<std::size_t>(select)];
         sideList.selectRow(select, false, true);
         rebuildingSide = false;
+    }
+
+    // A bank file holds its programs; separate files (loose .fxp files, Synthax1 presets) are grouped by the bank name
+    // they carry, which for loose .fxp files is their folder.
+    static bool inBankFile(const synth::LibraryEntry& entry) { return entry.kind == synth::LibraryKind::LegacyProgram && !entry.loose; }
+
+    bool inBank(const synth::LibraryEntry& entry, const SideItem& item) const
+    {
+        return item.bankFile != noBankFile ? inBankFile(entry) && entry.file == item.bankFile
+                                           : !inBankFile(entry) && entry.bank == item.bank;
+    }
+
+    // The BANK tab: every bank, with every program it holds (duplicates of other banks included, so a bank is whole).
+    // Two bank files with the same name show their folder too. An open bank lists All and then its categories.
+    void addBankRows()
+    {
+        struct Bank
+        {
+            std::uint32_t name = 0;
+            std::uint32_t file = noBankFile;
+            int count = 0;
+            std::map<std::uint32_t, int> categories;
+        };
+        std::unordered_map<std::uint64_t, Bank> banks;
+        for (const auto& entry : data->entries)
+        {
+            const auto fileBank = inBankFile(entry);
+            if (!fileBank && entry.bank == 0)
+                continue;
+            const auto key = fileBank ? (std::uint64_t { 1 } << 32) | entry.file : std::uint64_t { entry.bank };
+            auto& bank = banks[key];
+            bank.name = entry.bank;
+            bank.file = fileBank ? entry.file : noBankFile;
+            ++bank.count;
+            ++bank.categories[entry.category];
+        }
+        std::unordered_map<std::uint32_t, int> sameName;
+        for (const auto& [key, bank] : banks)
+            ++sameName[bank.name];
+
+        std::vector<SideItem> rowsOfBanks;
+        rowsOfBanks.reserve(banks.size());
+        for (const auto& [key, bank] : banks)
+        {
+            SideItem item;
+            item.label = text(data->text(bank.name));
+            if (bank.file != noBankFile && sameName[bank.name] > 1)
+                item.label += "  (" + pathText(data->files[bank.file].parent_path().filename()) + ")";
+            item.id = bank.name;
+            item.bank = bank.name;
+            item.bankFile = bank.file;
+            item.tag = bank.file != noBankFile ? pathText(data->files[bank.file]).toStdString() : "pack:" + data->text(bank.name);
+            item.count = bank.count;
+            item.special = rowBank;
+            item.hasChildren = !bank.categories.empty();
+            rowsOfBanks.push_back(std::move(item));
+        }
+        std::sort(rowsOfBanks.begin(), rowsOfBanks.end(), [](const SideItem& a, const SideItem& b) {
+            const auto left = a.label.toLowerCase();
+            const auto right = b.label.toLowerCase();
+            return left == right ? a.tag < b.tag : left < right;
+        });
+        for (auto& item : rowsOfBanks)
+        {
+            const auto open = openBanks.count(item.tag) > 0;
+            const auto key = item.bankFile != noBankFile ? (std::uint64_t { 1 } << 32) | item.bankFile : std::uint64_t { item.bank };
+            sideItems.push_back(item);
+            if (!open)
+                continue;
+            const auto& categories = banks[key].categories;
+            auto child = item;
+            child.special = rowBankCategory;
+            child.hasChildren = false;
+            child.label = "All";
+            child.id = allCategories;
+            sideItems.push_back(child);
+            std::vector<std::uint32_t> ids;
+            for (const auto& [id, number] : categories)
+                ids.push_back(id);
+            std::sort(ids.begin(), ids.end(), [this](std::uint32_t a, std::uint32_t b) {
+                return a == 0 ? false : b == 0 ? true : lowerCase(data->text(a)) < lowerCase(data->text(b)); // "(no category)" last
+            });
+            for (const auto id : ids)
+            {
+                child.label = id == 0 ? juce::String("(no category)") : text(data->text(id));
+                child.id = id;
+                child.count = categories.at(id);
+                sideItems.push_back(child);
+            }
+        }
     }
 
     // Sorts every entry once per column change; filtering keeps this order.
@@ -940,6 +1098,16 @@ private:
             case columnDate:
                 before = [this, &byName](int a, int b) {
                     return entryAt(a).modified == entryAt(b).modified ? byName(a, b) : entryAt(a).modified < entryAt(b).modified;
+                };
+                break;
+            case columnProgram:
+                // Each bank's programs in their order; files apart from each other (the list shows one bank at a time).
+                before = [this, &byName](int a, int b) {
+                    const auto& left = entryAt(a);
+                    const auto& right = entryAt(b);
+                    if (left.file != right.file)
+                        return left.file < right.file;
+                    return left.programIndex == right.programIndex ? byName(a, b) : left.programIndex < right.programIndex;
                 };
                 break;
             case columnFavorite:
@@ -1006,9 +1174,17 @@ private:
         for (const auto index : order)
         {
             const auto& entry = entryAt(index);
-            if (!listed(index))
-                continue;
             const auto special = sideSelection.special;
+            if (isBankRow(special))
+            {
+                // A bank is shown whole, whatever Hide Duplicates says.
+                if (!inBank(entry, sideSelection))
+                    continue;
+                if (special == rowBankCategory && sideSelection.id != allCategories && entry.category != sideSelection.id)
+                    continue;
+            }
+            else if (!listed(index))
+                continue;
             if ((special == rowFavorites || special == rowFavoriteCategory) && !userOf(index).favorite)
                 continue;
             if ((special == rowLoose || special == rowLooseCategory) && !entry.loose)
@@ -1360,7 +1536,7 @@ private:
         place("PRESET NAME", nameValue, 22);
         place("AUTHOR", authorValue, 22);
         place("CATEGORY", categoryValue, 22);
-        place("PACK", bankValue, 22);
+        place("BANK", bankValue, 22);
         place("LOCATION", locationValue, 22);
         place("DESCRIPTION", descriptionValue, 36);
         place("TAGS", tagsValue, 28);
