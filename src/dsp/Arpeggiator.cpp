@@ -135,14 +135,16 @@ ArpGeneratedEvent Arpeggiator::processSample(const SynthParameters& parameters, 
         if (candidateCount <= 0)
             return event;
 
+        // Wrap restarts the whole pattern after that many steps: the step sequence and the note order both go back
+        // to the start (Wrap 8 plays only the first page of steps). 0 means no wrap.
         const auto stepCount = std::clamp(parameters.arp.stepCount, 1, arpStepCount);
-        const auto stepIndex = sequenceStep % stepCount;
+        const auto melodicStep = parameters.arp.wrap > 0
+            ? sequenceStep % std::clamp(parameters.arp.wrap, 1, arpStepCount)
+            : sequenceStep;
+        const auto stepIndex = melodicStep % stepCount;
         const auto& step = parameters.arp.steps[static_cast<std::size_t>(stepIndex)];
         const auto octaves = std::clamp(parameters.arp.octaves, 1, 4);
         const auto totalPositions = candidateCount * octaves;
-        const auto melodicStep = parameters.arp.wrap > 0
-            ? sequenceStep % std::clamp(parameters.arp.wrap, 1, 128)
-            : sequenceStep;
         auto position = selectPosition(melodicStep, totalPositions, parameters.arp.mode);
         if (parameters.arp.mode == ArpMode::Random)
         {

@@ -69,6 +69,10 @@ inline bool modesAndWrap()
     state.arp.mode = synth::ArpMode::StepSequence;
     if (sequence(state, 4) != std::vector<int> { 64, 71, 64, 71 }) // the key pressed last, as the reference synth does
         return false;
+    state.arp.wrap = 1; // the step pattern restarts too: only step 1 plays
+    if (sequence(state, 4) != std::vector<int> { 64, 64, 64, 64 })
+        return false;
+    state.arp.wrap = 0;
     state.arp.mode = synth::ArpMode::Random;
     const auto random = sequence(state, 32);
     if (random != sequence(state, 32) || random.size() != 32)

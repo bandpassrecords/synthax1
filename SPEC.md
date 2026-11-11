@@ -90,7 +90,7 @@ The modulation row is no longer a copy of the classic panels. These requirements
 
 ### Arpeggiator
 
-The arp supports the ten reference mode families, five velocity modes, sync/free timing, octave span, wrapping, and step transpose/velocity/hold. Step sequence, step chord, and ordered/random behaviors MUST be distinct and deterministic when seeded for tests. Triplet and dotted rates MUST have correct tempo ratios.
+The arp supports the ten reference mode families, five velocity modes, sync/free timing, octave span, wrapping, and step transpose/velocity/hold. Wrap is off or 1 to 16: after that many steps the whole pattern starts again, both the step sequence and the note order, so Wrap 8 plays only the first page of steps. Step sequence, step chord, and ordered/random behaviors MUST be distinct and deterministic when seeded for tests. Triplet and dotted rates MUST have correct tempo ratios.
 
 Held steps MUST preserve common notes and allow legato transitions where documented. Disabling arp/hold, changing relevant chord configuration, transport discontinuities, all-notes-off, and panic MUST release the correct generated notes. A silent gate gap MUST NOT stop the clock of a pending arp event.
 

@@ -407,7 +407,7 @@ std::vector<ParameterSpec> buildSpecs()
         }
     }
     specs.push_back(choiceParam("arp.velocity_mode", "Arp Velocity", "arp", { "Step", "Key", "Hold", "StepKey", "StepHold" }, 3));
-    specs.push_back(floatParam("arp.wrap", "Arp Wrap", "arp", "steps", 0.0f, 128.0f, 0.0f, 1.0f));
+    specs.push_back(floatParam("arp.wrap", "Arp Wrap", "arp", "steps", 0.0f, 16.0f, 0.0f, 1.0f)); // as the reference synth: off, 1 to 16
     specs.push_back(floatParam("arp.time_ms", "Arp Time", "arp", "milliseconds", 1.0f, 6000.0f, 125.0f, 0.01f, 0.35f));
     specs.push_back(floatParam("fx.phaser_center_hz", "Phaser Center Hz", "fx", "Hz", 20.0f, 20000.0f, 1000.0f));
     specs.push_back(floatParam("fx.phaser_spread", "Phaser Spread", "fx", "normalized", 0.0f, 1.0f, 0.5f));

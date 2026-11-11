@@ -22,7 +22,7 @@ not prove a Legacy audio match or a pixel match.
   native destinations. Changing the first source does not change that route;
   disabling the route restores the deterministic baseline.
 - Arp Up, Down, UpDown, DownUp, both endpoint-repeat modes and AsPlayed produce
-  specified note sequences. Wrap resets melodic position. Random is repeatable.
+  specified note sequences. Wrap restarts both the melodic position and the step pattern. Random is repeatable.
   StepSequence uses step transpose; ordinary melodic modes ignore it.
 - Triplet and dotted arp divisions are checked against their rounded sample
   durations. Tied steps preserve common notes, order the new note before the

@@ -313,7 +313,7 @@ void SynthEngine::setParameters(const SynthParameters& newParameters) noexcept
     masterTargetGain = targetGain;
     parameters.portamentoMode = static_cast<PortamentoMode>(std::clamp(static_cast<int>(parameters.portamentoMode), 0, 1));
     parameters.pitchBendRange = std::clamp(finiteOr(parameters.pitchBendRange, 2.0f), 0.0f, 24.0f);
-    parameters.arp.wrap = std::clamp(parameters.arp.wrap, 0, 128);
+    parameters.arp.wrap = std::clamp(parameters.arp.wrap, 0, arpStepCount);
     parameters.arp.timeMs = std::clamp(finiteOr(parameters.arp.timeMs, 125.0f), 1.0f, 6000.0f);
     parameters.arp.velocityMode = static_cast<ArpVelocityMode>(std::clamp(static_cast<int>(parameters.arp.velocityMode), 0, 4));
     for (auto& slot : parameters.transMod.slots)
@@ -522,7 +522,9 @@ RenderStats SynthEngine::process(float* left, float* right, int numSamples) noex
     {
         // MEASURED (sweeps/stepvel, stepwho): with the arpeggiator off, Step Velocity still follows the step sequence,
         // started by the first key pressed and advancing at the arp rate; the step velocities are read as they are.
-        const auto stepCount = std::clamp(parameters.arp.stepCount, 1, static_cast<int>(parameters.arp.steps.size()));
+        auto stepCount = std::clamp(parameters.arp.stepCount, 1, static_cast<int>(parameters.arp.steps.size()));
+        if (parameters.arp.wrap > 0)
+            stepCount = std::min(stepCount, parameters.arp.wrap); // Wrap shortens the step cycle here too
         auto durationParameters = parameters.arp;
         durationParameters.sync = true;
         for (int start = 0; start < stats.samplesRendered;)
