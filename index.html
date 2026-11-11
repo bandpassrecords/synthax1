@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Synthax1 — a free, open-source virtual analog synthesizer for Windows, macOS and Linux (VST3, AU and standalone), with a preset browser built for libraries of hundreds of thousands of programs.">
+    <title>Synthax1 — Virtual analog synth with a browser for huge libraries</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-content">
+                <div class="logo">
+                    <img src="favicon.svg" alt="" class="logo-image">
+                    <span class="logo-mark">synth<em>ax1</em></span>
+                </div>
+                <div class="nav-links">
+                    <a href="#features">Features</a>
+                    <a href="#browser">Preset Browser</a>
+                    <a href="#download">Download</a>
+                    <a href="https://github.com/bandpassrecords/synthax1" target="_blank" rel="noopener noreferrer" class="github-link">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        GitHub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">Two-part virtual analog,<br><em>every preset at hand.</em></h1>
+                <p class="hero-subtitle">Synthax1 is a free, open-source synthesizer with four oscillators, a filter for each of its two parts and modulation you can see — plus a preset browser that finds every bank and preset on your drive and lets you hear them one click at a time.</p>
+                <div class="hero-buttons">
+                    <a href="#download" class="btn btn-primary">Download — coming soon</a>
+                    <a href="#features" class="btn btn-secondary">Explore Features</a>
+                </div>
+                <p class="hero-plats">Windows · macOS · Linux — VST3 · AU · Standalone — free &amp; open source</p>
+
+                <div class="hero-visual">
+                    <div class="app-window">
+                        <img src="resources/screenshots/main-window.png" alt="The Synthax1 main window: oscillators, amp envelope, filters, the LCD with the arpeggiator page, the mixer, and the modulation row with envelope and LFO curves" class="app-screenshot">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Synthesis -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-head">
+                <h2 class="section-title">The Instrument</h2>
+                <p class="section-subtitle">A classic two-part layout, with a modulation row that shows what every source is doing.</p>
+            </div>
+
+            <div class="feature-rows">
+                <div class="feature-row">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/modulation-row.png" alt="The modulation row: Mod Env 1 and 2 curves, LFO 1 and 2 waveforms, and route rows with an amount knob and a destination box" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Modulation</div>
+                        <h3>See the Curves, Drag the Routes</h3>
+                        <p>Every envelope and LFO draws its own shape, and each panel has a colored handle: drag it onto any knob to route that source there. Each source has two route rows — an amount knob and a destination box — so what's modulated is always in plain sight.</p>
+                    </div>
+                </div>
+
+                <div class="feature-row reverse">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/lfo-step-misc.png" alt="LFO 2 in Step mode with eight drawn steps and the playback cursor, next to the Misc panel with Velocity and Mod Wheel routes" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">LFOs</div>
+                        <h3>Draw Steps, Watch Them Play</h3>
+                        <p>Pick the Step shape and draw up to sixteen steps right on the display, with a Smooth knob to glide between them. A cursor follows the LFO as it runs, restarting with each new note.</p>
+                        <ul>
+                            <li>Free rates from 0.042 to 192 Hz, or tempo sync from 8/1D down to 1/256T</li>
+                            <li>A FREE switch keeps an LFO running across notes</li>
+                            <li>Four Misc slots take Velocity, Mod Wheel, Key Track, Aftertouch and more</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="feature-row">
+                    <div class="feature-visual visual-duo">
+                        <div class="app-window">
+                            <img src="resources/screenshots/lcd-arp.png" alt="The LCD on the arpeggiator page: mode, velocity, octave, wrap, and per-step hold, transpose and velocity" class="app-screenshot">
+                        </div>
+                        <div class="app-window app-window-inset">
+                            <img src="resources/screenshots/lcd-delay.png" alt="The LCD on the delay page" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Arp &amp; Effects</div>
+                        <h3>A 16-Step Arpeggiator and Seven Effects</h3>
+                        <p>Ten arp modes with per-step hold, transpose and velocity, and Wrap to loop any number of steps. Distortion, phaser, chorus, EQ, delay, reverb and compressor each get their own page on the central display.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="spec-grid">
+                <div class="spec-item">
+                    <h4>Two stereo parts</h4>
+                    <p>Four oscillators with up to eight unison voices each, eight waveforms, detune, stereo and phase.</p>
+                </div>
+                <div class="spec-item">
+                    <h4>Filters</h4>
+                    <p>A lowpass, bandpass or highpass filter for each part, 12 or 24 dB, with input routing, drive and a shared Filter Control.</p>
+                </div>
+                <div class="spec-item">
+                    <h4>Envelopes &amp; LFOs</h4>
+                    <p>Two amp envelopes, two modulation envelopes and two LFOs, all drawn live.</p>
+                </div>
+                <div class="spec-item">
+                    <h4>Automation for everything</h4>
+                    <p>Every control is a host parameter, the wheels included; right click for the host's automation menu.</p>
+                </div>
+                <div class="spec-item">
+                    <h4>Unlimited undo</h4>
+                    <p>Undo and redo every edit with the toolbar arrows or Ctrl+Z / Ctrl+Y; Ctrl+click resets a knob.</p>
+                </div>
+                <div class="spec-item">
+                    <h4>Keyboard navigation</h4>
+                    <p>Arrow keys step through programs and banks; click the program name for the whole bank's list.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Preset browser -->
+    <section id="browser" class="features">
+        <div class="container">
+            <div class="section-head">
+                <h2 class="section-title">The Preset Browser</h2>
+                <p class="section-subtitle">Point it at one folder. It finds every bank and preset below it — hundreds of thousands of programs list in seconds.</p>
+            </div>
+
+            <div class="feature-rows">
+                <div class="feature-row">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/browser-category.png" alt="The preset browser filtered to the Lead category, with a program selected and the details panel open" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Audition</div>
+                        <h3>Hear Presets One Click at a Time</h3>
+                        <p>A single click loads a preset for a moment, so your track — or a middle C with Play Preview on — plays it. Step through the list with the arrow keys; a double click keeps the one you like.</p>
+                        <ul>
+                            <li>Browse by category, bank, vendor or tag</li>
+                            <li>Search with <code>cat:bass</code>, <code>pack:</code>, <code>tag:</code> or <code>fav:1</code></li>
+                            <li>Favorites, notes, duplicate hiding and Shuffle</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="feature-row reverse">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/browser-bank.png" alt="The BANK tab: a bank opened into All and its categories, listing its programs in bank order with their numbers" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Banks</div>
+                        <h3>Whole Banks, in Their Own Order</h3>
+                        <p>The BANK tab lists every bank on its own. Choose one to see all of its programs, numbered and in bank order — duplicates included — or open it to browse that bank by category.</p>
+                    </div>
+                </div>
+
+                <div class="feature-row">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/browser-drag.png" alt="A program selected in the browser, the COPY PATH button, and the status line explaining how to drag a whole bank" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Files</div>
+                        <h3>Take a Preset Anywhere</h3>
+                        <p>Drag a program from a <code>.fxb</code> bank or <code>.fxp</code> file out of the browser and it drops as a <code>.fxp</code> file — onto a plugin, a DAW or a folder. Hold Ctrl to drop its whole <code>.fxb</code> bank instead. COPY PATH (or Ctrl+C) puts the file's location on the clipboard, and a right click saves a program as its own <code>.fxp</code>.</p>
+                    </div>
+                </div>
+
+                <div class="feature-row reverse">
+                    <div class="feature-visual">
+                        <div class="app-window">
+                            <img src="resources/screenshots/part-b-delay.png" alt="Part B selected, with the delay page on the LCD" class="app-screenshot">
+                        </div>
+                    </div>
+                    <div class="feature-copy">
+                        <div class="feature-kicker">Compatibility</div>
+                        <h3>Your Banks Open as They Are</h3>
+                        <p>Synthax1 reads <code>.fxp</code> programs and <code>.fxb</code> banks in the Sylenth1® format — every container version, compressed or not — and writes unedited programs back byte for byte. Its own presets are plain <code>.Synthax1Preset</code> files.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download -->
+    <section id="download" class="download">
+        <div class="container">
+            <h2 class="section-title">Download</h2>
+            <p class="section-subtitle">Free and open source — always</p>
+            <div class="coming-soon">
+                <div class="badge">Coming soon</div>
+                <div class="formats">
+                    <span>Windows · VST3</span>
+                    <span>macOS · VST3 / AU</span>
+                    <span>Linux · VST3</span>
+                    <span>Standalone</span>
+                </div>
+                <p>The first release is on its way. Watch the repository to hear when it's out, or build it yourself today with CMake — the instructions are in the README.</p>
+                <a href="https://github.com/bandpassrecords/synthax1/releases" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Releases on GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Synthax1</h4>
+                    <p>A virtual analog synthesizer with a preset browser for big libraries. Free and open source, built with JUCE.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="https://github.com/bandpassrecords/synthax1">GitHub</a></li>
+                        <li><a href="https://github.com/bandpassrecords/synthax1/issues">Report an Issue</a></li>
+                        <li><a href="https://github.com/bandpassrecords/synthax1/releases">All Releases</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Built With</h4>
+                    <ul>
+                        <li><a href="https://juce.com" target="_blank" rel="noopener noreferrer">JUCE</a></li>
+                        <li><a href="https://cmake.org" target="_blank" rel="noopener noreferrer">CMake</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Synthax1 by BandPass Records. MIT licensed.</p>
+                <p class="footer-attribution">Sylenth1 is a registered trademark of LennarDigital. Synthax1 is not affiliated with or endorsed by LennarDigital. Program names shown in the browser screenshots are demo content.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Screenshot Lightbox -->
+    <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+        <img src="" alt="" class="lightbox-img" id="lightbox-img">
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
