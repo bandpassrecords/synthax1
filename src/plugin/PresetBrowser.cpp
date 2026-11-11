@@ -631,26 +631,32 @@ private:
             updateStatus();
             return {};
         }
-        const auto modifiers = juce::ModifierKeys::getCurrentModifiersRealtime();
-#if JUCE_MAC
-        const auto bankKey = modifiers.isAltDown();
-#else
-        const auto bankKey = modifiers.isCtrlDown();
-#endif
-        const auto wholeBank = bankKey && !entryAt(index).loose;
-        return juce::String(wholeBank ? "bank " : "program ") + juce::String(index);
+        statusText = entryAt(index).loose ? "Dragging " + text(entryAt(index).name) + " (.fxp)"
+                                          : "Dragging " + text(entryAt(index).name) + ": hold " + bankKeyName()
+                                                + " before leaving the window to drop its whole bank";
+        updateStatus();
+        return index;
     }
 
+#if JUCE_MAC
+    static juce::String bankKeyName() { return "Option"; }
+    static bool bankKeyDown() { return juce::ModifierKeys::getCurrentModifiersRealtime().isAltDown(); }
+#else
+    static juce::String bankKeyName() { return "Ctrl"; }
+    static bool bankKeyDown() { return juce::ModifierKeys::getCurrentModifiersRealtime().isCtrlDown(); }
+#endif
+
+    // Called as the drag leaves the window, so the bank key counts if it is held by then, even if pressed after the
+    // drag began. Once outside, the system drag carries that one file and cannot change it.
     bool shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTarget::SourceDetails& details, juce::StringArray& files,
                                               bool& canMoveFiles) override
     {
-        const auto description = details.description.toString();
-        const auto wholeBank = description.startsWith("bank ");
-        if (!wholeBank && !description.startsWith("program "))
+        if (!details.description.isInt())
             return false;
-        const auto index = description.fromFirstOccurrenceOf(" ", false, false).getIntValue();
+        const auto index = static_cast<int>(details.description);
         if (index < 0 || index >= static_cast<int>(data->entries.size()))
             return false;
+        const auto wholeBank = bankKeyDown() && !entryAt(index).loose;
         juce::String message;
         const auto file = wholeBank ? juce::File(pathText(data->pathOf(entryAt(index))))
                                     : programFileFor(data->pathOf(entryAt(index)), entryAt(index), message);
@@ -662,6 +668,8 @@ private:
         }
         files.add(file.getFullPathName());
         canMoveFiles = false;
+        statusText = "Dropping " + file.getFileName();
+        updateStatus();
         return true;
     }
 
