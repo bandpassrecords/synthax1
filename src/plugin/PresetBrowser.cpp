@@ -1,5 +1,6 @@
 #include "PresetBrowser.h"
 
+#include "../legacy/LegacyImport.h"
 #include "../presets/PresetLibrary.h"
 
 #include <algorithm>
@@ -43,6 +44,51 @@ std::filesystem::path pathFrom(const juce::String& value)
 {
     const auto* bytes = value.toRawUTF8();
     return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(bytes)));
+}
+
+// A .fxp file holding one program of the reference synth's files, ready to drop on it or open with its Load Preset: a
+// lone .fxp is the file itself, a program inside a bank is written to a temporary .fxp named after it. Synthax1
+// presets have none until edited sounds can be exported.
+juce::File programFileFor(const std::filesystem::path& path, const synth::LibraryEntry& entry, juce::String& message)
+{
+    const juce::File file(pathText(path));
+    if (entry.kind != synth::LibraryKind::LegacyProgram)
+    {
+        message = "A Synthax1 preset cannot be written as a .fxp yet";
+        return {};
+    }
+    if (entry.loose && file.hasFileExtension("fxp"))
+        return file;
+
+    const auto read = synth::legacy::readFile(file.getFullPathName().toStdString(), synth::legacy::juceZlib());
+    if (!read.ok() || entry.programIndex < 0 || static_cast<std::size_t>(entry.programIndex) >= read.document->patches.size())
+    {
+        message = "Could not read " + file.getFileName() + " program " + juce::String(entry.programIndex + 1);
+        return {};
+    }
+    auto info = read.document->info;
+    info.kind = synth::legacy::ContainerKind::ChunkProgram;
+    info.future.clear();
+    const auto bytes = synth::legacy::writeProgram(read.document->patches[static_cast<std::size_t>(entry.programIndex)], info,
+                                                   synth::legacy::juceZlib());
+
+    const auto folder = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Synthax1 programs");
+    if (!folder.createDirectory())
+    {
+        message = "Could not create " + folder.getFullPathName();
+        return {};
+    }
+    auto name = juce::File::createLegalFileName(juce::String::fromUTF8(entry.name.c_str())).trim();
+    if (name.isEmpty())
+        name = "Program " + juce::String(entry.programIndex + 1);
+    const auto target = folder.getChildFile(name + ".fxp");
+    std::string error;
+    if (!synth::legacy::writeFile(target.getFullPathName().toStdString(), bytes, error))
+    {
+        message = juce::String(error);
+        return {};
+    }
+    return target;
 }
 
 std::string lowerCase(const std::string& value)
@@ -144,6 +190,7 @@ struct Delay final : juce::Timer
 } // namespace
 
 class PresetBrowserPanel final : public juce::Component,
+                                 public juce::DragAndDropContainer,
                                  private juce::TableListBoxModel,
                                  private juce::Timer,
                                  private juce::TextEditor::Listener
@@ -299,6 +346,16 @@ public:
         hintLabel.setColour(juce::Label::textColourId, accentColour);
         addAndMakeVisible(hintLabel);
 
+        copyPathButton.setButtonText("COPY PATH");
+        copyPathButton.setColour(juce::TextButton::buttonColourId, graphite);
+        copyPathButton.setColour(juce::TextButton::textColourOffId, textColour);
+        copyPathButton.setLookAndFeel(&smallButtons);
+        copyPathButton.setTooltip("Copy the selected preset's file path, or its bank's (Ctrl+C). Drag a program of the "
+                                  "reference synth out of the window to drop it as a .fxp file, or with Ctrl held as its "
+                                  "whole .fxb bank; right click for more.");
+        copyPathButton.onClick = [this] { copyPath(selectedEntry, false); };
+        addAndMakeVisible(copyPathButton);
+
         settingsButton.setButtonText("FOLDERS / SCAN");
         settingsButton.setColour(juce::TextButton::buttonColourId, graphite);
         settingsButton.setColour(juce::TextButton::textColourOffId, textColour);
@@ -333,6 +390,7 @@ public:
         for (auto* tab : tabs)
             tab->setLookAndFeel(nullptr);
         settingsButton.setLookAndFeel(nullptr);
+        copyPathButton.setLookAndFeel(nullptr);
         detailsButton.setLookAndFeel(nullptr);
         closeButton.setLookAndFeel(nullptr);
         stopPreview();
@@ -376,6 +434,8 @@ public:
         detailsButton.setBounds(top.removeFromRight(60));
         top.removeFromRight(8);
         settingsButton.setBounds(top.removeFromRight(120));
+        top.removeFromRight(8);
+        copyPathButton.setBounds(top.removeFromRight(90));
         top.removeFromRight(8);
         searchBox.setBounds(top);
         area.removeFromTop(8);
@@ -429,6 +489,11 @@ public:
         if (key == juce::KeyPress::returnKey && selectedEntry >= 0)
         {
             commitSelected();
+            return true;
+        }
+        if (key.isKeyCode('C') && key.getModifiers().isCommandDown() && selectedEntry >= 0)
+        {
+            copyPath(selectedEntry, false);
             return true;
         }
         if (key.isKeyCode('F') && key.getModifiers().isCtrlDown())
@@ -551,6 +616,54 @@ private:
             commitSelected();
     }
     void returnKeyPressed(int) override { commitSelected(); }
+
+    // A program of the reference synth's files can be dragged out of the window; it leaves as a .fxp file, or with
+    // Ctrl (Option on macOS) held as the whole .fxb bank it belongs to. Those are the system's "copy" keys: Shift would
+    // ask the drop target to move the file, which this drag does not allow, so the drop would be refused.
+    juce::var getDragSourceDescription(const juce::SparseSet<int>& selectedRows) override
+    {
+        if (selectedRows.isEmpty() || selectedRows[0] < 0 || selectedRows[0] >= static_cast<int>(rows.size()))
+            return {};
+        const auto index = rows[static_cast<std::size_t>(selectedRows[0])];
+        if (entryAt(index).kind != synth::LibraryKind::LegacyProgram)
+        {
+            statusText = "A Synthax1 preset cannot be dragged out as a .fxp yet";
+            updateStatus();
+            return {};
+        }
+        const auto modifiers = juce::ModifierKeys::getCurrentModifiersRealtime();
+#if JUCE_MAC
+        const auto bankKey = modifiers.isAltDown();
+#else
+        const auto bankKey = modifiers.isCtrlDown();
+#endif
+        const auto wholeBank = bankKey && !entryAt(index).loose;
+        return juce::String(wholeBank ? "bank " : "program ") + juce::String(index);
+    }
+
+    bool shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTarget::SourceDetails& details, juce::StringArray& files,
+                                              bool& canMoveFiles) override
+    {
+        const auto description = details.description.toString();
+        const auto wholeBank = description.startsWith("bank ");
+        if (!wholeBank && !description.startsWith("program "))
+            return false;
+        const auto index = description.fromFirstOccurrenceOf(" ", false, false).getIntValue();
+        if (index < 0 || index >= static_cast<int>(data->entries.size()))
+            return false;
+        juce::String message;
+        const auto file = wholeBank ? juce::File(pathText(data->pathOf(entryAt(index))))
+                                    : programFileFor(data->pathOf(entryAt(index)), entryAt(index), message);
+        if (file == juce::File())
+        {
+            statusText = message;
+            updateStatus();
+            return false;
+        }
+        files.add(file.getFullPathName());
+        canMoveFiles = false;
+        return true;
+    }
 
     void sortOrderChanged(int newSortColumnId, bool isForwards) override
     {
@@ -1055,13 +1168,76 @@ private:
         const auto user = userOf(index);
         menu.addItem(1, user.favorite ? "Remove from favorites" : "Add to favorites");
         menu.addItem(2, "Show file in explorer");
-        const auto path = data->pathOf(entryAt(index));
+        const auto& entry = entryAt(index);
+        const auto legacy = entry.kind == synth::LibraryKind::LegacyProgram;
+        const auto inBank = legacy && !entry.loose;
+        menu.addSeparator();
+        menu.addItem(3, inBank ? "Copy bank path" : "Copy file path");
+        if (inBank)
+            menu.addItem(4, "Copy path of this program as .fxp");
+        menu.addItem(5, "Save as .fxp...", legacy);
+        const auto path = data->pathOf(entry);
         menu.showMenuAsync({}, [this, index, path](int result) {
             if (result == 1)
                 toggleFavorite(index);
             else if (result == 2)
                 juce::File(pathText(path)).revealToUser();
+            else if (result == 3)
+                copyPath(index, false);
+            else if (result == 4)
+                copyPath(index, true);
+            else if (result == 5)
+                saveAsProgramFile(index);
         });
+    }
+
+    // Copies the path of an entry's file (a bank's, for a program inside one) or, with asProgram, of a .fxp holding
+    // the program alone.
+    void copyPath(int index, bool asProgram)
+    {
+        if (index < 0 || index >= static_cast<int>(data->entries.size()))
+            return;
+        const auto& entry = entryAt(index);
+        juce::String message;
+        const auto file = asProgram ? programFileFor(data->pathOf(entry), entry, message) : juce::File(pathText(data->pathOf(entry)));
+        if (file == juce::File())
+            statusText = message;
+        else
+        {
+            juce::SystemClipboard::copyTextToClipboard(file.getFullPathName());
+            statusText = "Copied " + file.getFullPathName();
+        }
+        updateStatus();
+    }
+
+    void saveAsProgramFile(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(data->entries.size()))
+            return;
+        const auto& entry = entryAt(index);
+        juce::String message;
+        const auto source = programFileFor(data->pathOf(entry), entry, message);
+        if (source == juce::File())
+        {
+            statusText = message;
+            updateStatus();
+            return;
+        }
+        chooser = std::make_unique<juce::FileChooser>("Save the program as a .fxp file",
+                                                      juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                                                          .getChildFile(source.getFileName()),
+                                                      "*.fxp");
+        const juce::Component::SafePointer<PresetBrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                 | juce::FileBrowserComponent::warnAboutOverwriting,
+                             [safe, source](const juce::FileChooser& fileChooser) {
+                                 if (safe == nullptr || fileChooser.getResult() == juce::File())
+                                     return;
+                                 const auto target = fileChooser.getResult().withFileExtension("fxp");
+                                 const auto ok = target == source || source.copyFileTo(target);
+                                 safe->statusText = ok ? "Saved " + target.getFullPathName() : "Could not save " + target.getFullPathName();
+                                 safe->updateStatus();
+                             });
     }
 
     void chooseLibraryFolder()
@@ -1268,7 +1444,7 @@ private:
 
     juce::TextEditor searchBox;
     juce::TableListBox table;
-    juce::TextButton settingsButton, detailsButton;
+    juce::TextButton settingsButton, copyPathButton, detailsButton;
     juce::ToggleButton previewButton, duplicatesButton, shuffleButton;
     bool shuffled = false;
     std::uint32_t shuffleSeed = 0;
