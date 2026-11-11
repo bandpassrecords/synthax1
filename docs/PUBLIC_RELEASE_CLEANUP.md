@@ -8,8 +8,8 @@ Status as of 2026-11-06. The name was removed from code, docs and file names in 
 
 | File | What it says | Decision needed |
 | --- | --- | --- |
-| `README.md` lines 3, 10, 38 | Legacy import feature, `.fxp`/`.fxb` support, and the trademark notice | Keep the trademark notice and the compatibility wording; nothing else may name it |
-| `README.md` line 10 | Links to `docs/SYLENTH_IMPORT.md`, which does not exist (the file is `docs/LEGACY_IMPORT.md`) | Fix the link |
+| `README.md` lines 14, 39 | One compatibility line (`.fxp`/`.fxb` in its format, linking `docs/LEGACY_IMPORT.md`) and the trademark notice | Done: nothing else names it; the comparison with the original was removed |
+| `gh-pages` site | One compatibility paragraph and the trademark notice in the footer | Keep it to those two |
 
 ## Git history
 
