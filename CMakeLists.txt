@@ -103,6 +103,7 @@ juce_add_plugin(Synthax1Plugin
     PLUGIN_MANUFACTURER_CODE BpRc
     PLUGIN_CODE Synx
     FORMATS AU VST3 Standalone
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/packaging/branding/synthax1-icon-1024.png"
     PRODUCT_NAME "Synthax1")
 
 target_sources(Synthax1Plugin

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A2F2E"/><stop offset="1" stop-color="#151818"/></linearGradient></defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#tile)"/>
+  <path d="M 278.7 745.3 A 330 330 0 1 1 745.3 745.3" fill="none" stroke="#E8B663" stroke-width="68" stroke-linecap="round"/>
+  <path d="M 290.0 512.0 L 294.6 497.6 L 299.2 483.5 L 303.9 469.9 L 308.5 457.0 L 313.1 445.0 L 317.8 434.2 L 322.4 424.7 L 327.0 416.7 L 331.6 410.4 L 336.2 405.7 L 340.9 402.9 L 345.5 402.0 L 350.1 402.9 L 354.8 405.7 L 359.4 410.4 L 364.0 416.7 L 368.6 424.7 L 373.2 434.2 L 377.9 445.0 L 382.5 457.0 L 387.1 469.9 L 391.8 483.5 L 396.4 497.6 L 401.0 512.0 L 405.6 526.4 L 410.2 540.5 L 414.9 554.1 L 419.5 567.0 L 424.1 579.0 L 428.8 589.8 L 433.4 599.3 L 438.0 607.3 L 442.6 613.6 L 447.2 618.3 L 451.9 621.1 L 456.5 622.0 L 461.1 621.1 L 465.8 618.3 L 470.4 613.6 L 475.0 607.3 L 479.6 599.3 L 484.2 589.8 L 488.9 579.0 L 493.5 567.0 L 498.1 554.1 L 502.8 540.5 L 507.4 526.4 L 512.0 512.0 L 618 402 L 618 622 L 734 512" fill="none" stroke="#FBF6E8" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,3 +1,5 @@
+<img src="packaging/branding/synthax1-icon.svg" alt="Synthax1 logo" width="96" align="right">
+
 # Synthax1
 
 A free, open-source virtual analog synthesizer for Windows, macOS and Linux (VST3, AU on macOS, and a standalone app), with a preset browser built for very large libraries.
