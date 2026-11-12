@@ -1,0 +1,15 @@
+Synthax1 release binaries
+=========================
+
+The Synthax1 source code is MIT licensed (see LICENSE).
+
+These binaries are built with JUCE (https://juce.com) under its AGPLv3 option, so the
+binaries as a whole are distributed under the GNU Affero General Public License,
+version 3 (see licenses/AGPL-3.0.txt).
+
+The complete corresponding source code, and the source for every release, is at
+https://github.com/bandpassrecords/synthax1
+
+The binaries are not code-signed yet. On macOS, open System Settings > Privacy & Security
+and choose "Open Anyway" after the first launch (or remove the quarantine attribute with
+xattr -dr com.apple.quarantine <bundle>).

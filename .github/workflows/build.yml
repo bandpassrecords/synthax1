@@ -36,6 +36,16 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
+      - name: Check the tag matches the project version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          project=$(sed -nE 's/^[[:space:]]*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -1)
+          if [ "v$project" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the CMakeLists.txt project version $project"
+            exit 1
+          fi
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -60,7 +70,7 @@ jobs:
           key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
       - name: Configure
-        # The the reference synth reference render host is a developer tool (needs a local the reference synth), so it is not built here.
+        # The reference render host is a developer tool that needs a locally installed plugin, so it is not built here.
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
@@ -74,12 +84,21 @@ jobs:
         # SynthaX1NativeProcessorTest crashed before this project began and is excluded until it is fixed.
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure -E NativeProcessor
 
-      - name: Collect the plugins (VST3 on every platform, plus AU on macOS)
+      - name: Collect the plugins, the standalone app and the licenses
         shell: bash
         run: |
           mkdir -p dist
-          cp -R build/Synthax1Plugin_artefacts/${{ env.BUILD_TYPE }}/VST3 dist/ 2>/dev/null || true
-          cp -R build/Synthax1Plugin_artefacts/${{ env.BUILD_TYPE }}/AU dist/ 2>/dev/null || true
+          artefacts=build/Synthax1Plugin_artefacts/${{ env.BUILD_TYPE }}
+          cp -R "$artefacts/VST3" dist/
+          cp -R "$artefacts/AU" dist/ 2>/dev/null || true
+          cp -R "$artefacts/Standalone" dist/
+          # The binaries include JUCE under its AGPLv3 option.
+          cp LICENSE packaging/BINARY-LICENSE.txt dist/
+          mkdir -p dist/licenses
+          cp packaging/licenses/AGPL-3.0.txt dist/licenses/
+          cp build/_deps/juce-src/LICENSE.md dist/licenses/JUCE-LICENSE.md
+          # Linker leftovers next to the Windows bundle are not part of the plugin.
+          find dist -maxdepth 2 \( -name '*.exp' -o -name '*.lib' -o -name '*.pdb' \) -delete
           find dist -maxdepth 2 | head -50
 
       - name: Upload
@@ -103,8 +122,12 @@ jobs:
       - name: Zip each platform
         run: |
           cd artifacts
-          for dir in */; do (cd "$dir" && zip -r "../${dir%/}.zip" .); done
+          for dir in */; do
+            name=${dir%/}
+            (cd "$dir" && zip -r -y "../Synthax1-${GITHUB_REF_NAME}-${name#Synthax1-}.zip" .)
+          done
+          ls -la
+      # The release skill creates the release with its notes first; this only attaches the zips.
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*.zip
-          generate_release_notes: true
