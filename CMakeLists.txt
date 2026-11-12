@@ -177,7 +177,7 @@ target_compile_definitions(Synthax1Render
 
 # Offline host that renders the installed the reference synth for docs/SOUND_PARITY.md. A developer
 # tool: it hosts VST3 plug-ins, so that is enabled for this target only.
-option(SYNTHAX1_BUILD_REFERENCE_HOST "Build the the reference synth reference render host" ON)
+option(SYNTHAX1_BUILD_REFERENCE_HOST "Build the developer reference render host" ON)
 if(SYNTHAX1_BUILD_REFERENCE_HOST)
     juce_add_console_app(LegacyRenderHost PRODUCT_NAME "LegacyRenderHost")
     target_sources(LegacyRenderHost
@@ -314,7 +314,7 @@ if(SYNTHAX1_ENABLE_TESTS)
 
     # The reference synth interop. Format/mapper tests are JUCE-free; pass a folder of real
     # .fxp/.fxb files with -DSYNTHAX1_LEGACY_SAMPLES=<dir> to round-trip them too.
-    set(SYNTHAX1_LEGACY_SAMPLES "" CACHE PATH "Optional folder of the reference synth .fxp/.fxb files for round-trip tests")
+    set(SYNTHAX1_LEGACY_SAMPLES "" CACHE PATH "Optional folder of .fxp/.fxb files for round-trip tests")
     add_executable(LegacyFormatTest src/legacy/LegacyFormat.cpp tests/legacy/LegacyFormatTest.cpp)
     add_test(NAME LegacyFormatTest COMMAND LegacyFormatTest ${SYNTHAX1_LEGACY_SAMPLES})
     add_executable(LegacyMapperTest src/legacy/LegacyFormat.cpp src/legacy/LegacyPatchMapper.cpp tests/legacy/LegacyMapperTest.cpp)

@@ -64,6 +64,6 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
 // True when the state still sounds exactly like the patch it was imported from.
 bool isUneditedImport(const juce::ValueTree& state);
 
-// One-line summary for the status bar, e.g. "Imported 128 the reference synth programs (37 approximations)".
+// One-line summary for the status bar, e.g. "Imported 128 .fxp/.fxb programs (37 approximations)".
 juce::String summarize(const ImportResult& result);
 } // namespace synth::legacy

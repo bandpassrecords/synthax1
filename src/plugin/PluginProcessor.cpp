@@ -2222,7 +2222,7 @@ bool SynthAudioProcessor::loadProgramBankFile(const juce::File& file, juce::Stri
         return importLegacyFile(file, message);
     if (!file.hasFileExtension("Synthax1Bank"))
     {
-        message = "Supported bank formats are .Synthax1Bank and the reference synth .fxb/.fxp";
+        message = "Supported bank formats are .Synthax1Bank, .fxb and .fxp";
         return false;
     }
     if (file.getSize() > 64 * 1024 * 1024)
@@ -2308,7 +2308,7 @@ bool SynthAudioProcessor::placeImportedPrograms(std::vector<juce::String> names,
     currentProgram.store(first, std::memory_order_release);
     const auto status = message;
     if (!applyPreparedPresetState(selected.state.createCopy(), synth::fingerprintPresetState(selected.baseline),
-                                  "The reference synth import", selected.name, {}, message, false))
+                                  ".fxp/.fxb import", selected.name, {}, message, false))
         return false;
     message = status;
     if (count < static_cast<int>(states.size()))

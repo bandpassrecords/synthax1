@@ -364,8 +364,8 @@ public:
         copyPathButton.setColour(juce::TextButton::buttonColourId, graphite);
         copyPathButton.setColour(juce::TextButton::textColourOffId, textColour);
         copyPathButton.setLookAndFeel(&smallButtons);
-        copyPathButton.setTooltip("Copy the selected preset's file path, or its bank's (Ctrl+C). Drag a program of the "
-                                  "reference synth out of the window to drop it as a .fxp file, or with Ctrl held as its "
+        copyPathButton.setTooltip("Copy the selected preset's file path, or its bank's (Ctrl+C). Drag a program from a .fxb "
+                                  "bank or .fxp file out of the window to drop it as a .fxp file, or with Ctrl held as its "
                                   "whole .fxb bank; right click for more.");
         copyPathButton.onClick = [this] { copyPath(selectedEntry, false); };
         addAndMakeVisible(copyPathButton);
@@ -1469,7 +1469,7 @@ private:
             }
             else if (result == 1)
             {
-                chooser = std::make_unique<juce::FileChooser>("Choose another folder with presets or the reference synth banks");
+                chooser = std::make_unique<juce::FileChooser>("Choose another folder with presets or .fxb banks");
                 chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
                                      [this](const juce::FileChooser& picked) {
                                          const auto folder = picked.getResult();

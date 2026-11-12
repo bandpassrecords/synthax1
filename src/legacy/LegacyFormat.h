@@ -43,7 +43,7 @@ enum class Field : int
 };
 
 inline constexpr int fieldCount = static_cast<int>(Field::Count);
-static_assert(fieldCount == 242, "The reference synth programs carry at least 242 fields");
+static_assert(fieldCount == 242, "Programs carry at least 242 fields");
 
 inline constexpr int nameBytesInChunk = 36;
 inline constexpr int nameBytesInFxHeader = 28;

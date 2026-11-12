@@ -8,8 +8,8 @@ Status as of 2026-11-06. The name was removed from code, docs and file names in 
 
 | File | What it says | Decision needed |
 | --- | --- | --- |
-| `README.md` lines 14, 39 | One compatibility line (`.fxp`/`.fxb` in its format, linking `docs/LEGACY_IMPORT.md`) and the trademark notice | Done: nothing else names it; the comparison with the original was removed |
-| `gh-pages` site | One compatibility paragraph and the trademark notice in the footer | Keep it to those two |
+| `README.md`, `gh-pages` site, release notes | Nothing: compatibility is described as `.fxp`/`.fxb` support only, with no product name or trademark notice (owner's decision, 2026-11-12) | Keep it that way |
+| Messages shown to users (import, export, browser) | Nothing: they say `.fxp`/`.fxb` instead of "the reference synth" | Keep new messages the same |
 
 ## Git history
 
@@ -34,7 +34,7 @@ Decision: the importer is a feature (README sells it). The measurement tooling a
 
 ## Files present locally but ignored by git (never commit)
 
-`Sylenth1Manual.pdf`, `Serum_Manual.pdf`, `FXPSylenth1Preset.bt`, `serum2.jpg`, `init.png`, `research/` (renders and sweeps made with the original plugin). `.gitignore` already keeps them out. Do not move them into a tracked folder.
+the reference manuals (`*Manual.pdf`), the `.bt` field template, `serum2.jpg`, `init.png`, `research/` (renders and sweeps made with the original plugin). `.gitignore` already keeps them out. Do not move them into a tracked folder.
 
 ## Interface
 

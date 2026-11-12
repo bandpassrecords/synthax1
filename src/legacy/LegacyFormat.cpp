@@ -204,7 +204,7 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto header = peekHeader(chunk);
     if (!header)
     {
-        error = "chunk does not start with the the reference synth signature";
+        error = "chunk does not start with the expected program chunk signature";
         return false;
     }
 
@@ -216,18 +216,18 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto body = chunk.subspan(8);
     if (!isZlibHeader(body))
     {
-        error = "The reference synth chunk header is inconsistent (" + std::to_string(header->programs) + " programs of "
+        error = "The program chunk header is inconsistent (" + std::to_string(header->programs) + " programs of "
               + std::to_string(header->fields) + " fields in " + std::to_string(chunk.size()) + " bytes)";
         return false;
     }
     if (!zlib.inflate)
     {
-        error = "this the reference synth " + std::to_string(header->version) + " file is compressed and no zlib decoder is available";
+        error = "this version " + std::to_string(header->version) + " file is compressed and no zlib decoder is available";
         return false;
     }
     if (!zlib.inflate(body, storage, maximumFileBytes))
     {
-        error = "compressed the reference synth chunk is corrupt or larger than 64 MB";
+        error = "compressed program chunk is corrupt or larger than 64 MB";
         return false;
     }
 
@@ -236,7 +236,7 @@ bool expandChunk(std::span<const std::uint8_t> chunk, const Zlib& zlib, std::vec
     const auto inner = peekHeader(plain);
     if (!inner || !plausible(*inner, plain.size()))
     {
-        error = "decompressed the reference synth chunk is inconsistent";
+        error = "decompressed program chunk is inconsistent";
         return false;
     }
     return true;
@@ -384,13 +384,13 @@ bool parseParameterProgram(Reader& in, Patch& patch, ReadResult& result, std::si
     const auto paramCount = in.i32be();
     if (chunkMagic != "CcnK" || magic != "FxCk" || id != "syl1")
     {
-        result.error = label + " is not a the reference synth FxCk record";
+        result.error = label + " is not a supported FxCk record";
         return false;
     }
     if (paramCount < fieldCount || paramCount > maximumFields
         || !in.has(nameBytesInFxHeader + static_cast<std::size_t>(paramCount) * 4))
     {
-        result.error = label + " has " + std::to_string(paramCount) + " parameters; the reference synth needs at least "
+        result.error = label + " has " + std::to_string(paramCount) + " parameters; a program needs at least "
                      + std::to_string(fieldCount);
         return false;
     }
@@ -487,7 +487,7 @@ ReadResult read(std::span<const std::uint8_t> bytes, const Zlib& zlib)
 
     if (pluginId != "syl1")
     {
-        result.error = "file belongs to another plugin (id '" + pluginId + "'), not the reference synth";
+        result.error = "file belongs to another plugin (id '" + pluginId + "'), not a supported .fxp/.fxb format";
         return result;
     }
     if (static_cast<std::uint64_t>(byteSize) + 8u != bytes.size())

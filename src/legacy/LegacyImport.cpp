@@ -153,7 +153,7 @@ ImportResult importDocument(juce::AudioProcessorValueTreeState& parameters, cons
         program.state.setProperty("current_preset", fallbackName, nullptr);
     }
     result.ok = !result.programs.empty();
-    result.message = result.ok ? summarize(result) : juce::String("The reference synth file contains no programs");
+    result.message = result.ok ? summarize(result) : juce::String("The file contains no programs");
     return result;
 }
 
@@ -164,7 +164,7 @@ ImportResult importBytes(juce::AudioProcessorValueTreeState& parameters, std::sp
     if (!parsed.ok())
     {
         ImportResult failed;
-        failed.message = "The reference synth import failed: " + juce::String(parsed.error);
+        failed.message = "Import failed: " + juce::String(parsed.error);
         return failed;
     }
 
@@ -178,7 +178,7 @@ ImportResult importFile(juce::AudioProcessorValueTreeState& parameters, const ju
     if (file.getSize() > 64 * 1024 * 1024)
     {
         ImportResult failed;
-        failed.message = "The reference synth file exceeds the 64 MB limit";
+        failed.message = "The file exceeds the 64 MB limit";
         return failed;
     }
 
@@ -221,7 +221,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
         auto source = sourceProgram(states[index]);
         if (!source)
         {
-            problems.add(label + " (not imported from the reference synth)");
+            problems.add(label + " (not imported from a .fxp/.fxb file)");
             continue;
         }
         if (!isUneditedImport(states[index]))
@@ -237,7 +237,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
 
     if (!problems.isEmpty())
     {
-        error = "Cannot export as the reference synth bank: " + problems.joinIntoString(", ");
+        error = "Cannot export as a .fxb bank: " + problems.joinIntoString(", ");
         return false;
     }
     if (patches.empty())
@@ -248,7 +248,7 @@ bool buildBank(const std::vector<juce::ValueTree>& states, const std::vector<juc
 
     if (patches.size() > static_cast<std::size_t>(programsPerBank))
     {
-        error = "A the reference synth bank holds " + juce::String(programsPerBank) + " programs";
+        error = "A .fxb bank holds " + juce::String(programsPerBank) + " programs";
         return false;
     }
     padWithInit(patches);
@@ -274,7 +274,7 @@ juce::String summarize(const ImportResult& result)
         rejected += static_cast<int>(program.rejected.size());
     }
 
-    auto text = "Imported " + juce::String(static_cast<int>(result.programs.size())) + " the reference synth program"
+    auto text = "Imported " + juce::String(static_cast<int>(result.programs.size())) + " .fxp/.fxb program"
               + (result.programs.size() == 1 ? "" : "s");
     juce::StringArray details;
     if (approximations > 0)
