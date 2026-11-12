@@ -8,7 +8,7 @@ Status as of 2026-11-06. The name was removed from code, docs and file names in 
 
 | File | What it says | Decision needed |
 | --- | --- | --- |
-| `README.md`, `gh-pages` site, release notes | Nothing: compatibility is described as `.fxp`/`.fxb` support only, with no product name or trademark notice (owner's decision, 2026-11-12) | Keep it that way |
+| `README.md`, `gh-pages` site, release notes | The product name only to describe file compatibility (opening its `.fxp`/`.fxb` files, dragging programs into it), always with ® and the trademark and non-affiliation notice (owner's decision, 2026-11-12) | Keep it to compatibility; never compare sound or looks |
 | Messages shown to users (import, export, browser) | Nothing: they say `.fxp`/`.fxb` instead of "the reference synth" | Keep new messages the same |
 
 ## Git history

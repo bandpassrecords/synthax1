@@ -36,8 +36,13 @@ failures and retries, reporting as you go.
   option, so the binaries are AGPLv3. Every release's notes say so.
 - **Not signed yet:** neither Windows nor macOS binaries are code-signed or
   notarized. The notes tell macOS users how to open them.
-- **No product names:** the notes, like the README and the website, describe
-  `.fxp`/`.fxb` support without naming another product.
+- **Sylenth1® only for compatibility:** the notes, like the README and the
+  website, may name Sylenth1 to describe file compatibility (opening its
+  `.fxp`/`.fxb` files, dragging programs or banks into it), always with ® and the
+  closing notice "Sylenth1 is a registered trademark of LennarDigital. Synthax1
+  is an independent project and is not affiliated with, endorsed by or
+  sponsored by LennarDigital; the name is used only to describe file
+  compatibility." Never compare sound or looks with it.
 - **Use `gh` first.** For tags, releases, runs and logs use `gh`, always with
   `-R bandpassrecords/synthax1`. Use `git` only to stage, commit and push
   (remote `origin`).
