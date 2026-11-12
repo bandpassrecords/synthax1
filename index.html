@@ -43,7 +43,7 @@
                 <h1 class="hero-title">Two-part virtual analog,<br><em>every preset at hand.</em></h1>
                 <p class="hero-subtitle">Synthax1 is a free, open-source synthesizer with four oscillators, a filter for each of its two parts and modulation you can see — plus a preset browser that finds every bank and preset on your drive and lets you hear them one click at a time.</p>
                 <div class="hero-buttons">
-                    <a href="#download" class="btn btn-primary">Download — coming soon</a>
+                    <a href="#download" class="btn btn-primary">Download v0.1.0</a>
                     <a href="#features" class="btn btn-secondary">Explore Features</a>
                 </div>
                 <p class="hero-plats">Windows · macOS · Linux — VST3 · AU · Standalone — free &amp; open source</p>
@@ -217,16 +217,41 @@
         <div class="container">
             <h2 class="section-title">Download</h2>
             <p class="section-subtitle">Free and open source — always</p>
-            <div class="coming-soon">
-                <div class="badge">Coming soon</div>
-                <div class="formats">
-                    <span>Windows · VST3</span>
-                    <span>macOS · VST3 / AU</span>
-                    <span>Linux · VST3</span>
-                    <span>Standalone</span>
+            <div class="download-cards">
+                <div class="download-card">
+                    <div class="download-icon">
+                        <img src="resources/os/Windows_logo_-_2012.svg" alt="" class="os-logo">
+                    </div>
+                    <h3>Windows</h3>
+                    <p>Windows 10 or later, 64-bit<br>VST3 and Standalone</p>
+                    <a href="https://github.com/bandpassrecords/synthax1/releases/download/v0.1.0/Synthax1-v0.1.0-Windows.zip" class="btn btn-primary">Download for Windows</a>
+                    <p class="download-note">Copy the whole <strong>Synthax1.vst3</strong> folder to <strong>C:\Program Files\Common Files\VST3</strong>. Not code-signed yet, so Windows may show <strong>Windows protected your PC</strong>: click <strong>More info → Run anyway</strong>.</p>
                 </div>
-                <p>The first release is on its way. Watch the repository to hear when it's out, or build it yourself today with CMake — the instructions are in the README.</p>
-                <a href="https://github.com/bandpassrecords/synthax1/releases" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Releases on GitHub</a>
+
+                <div class="download-card">
+                    <div class="download-icon">
+                        <img src="resources/os/MacOS_logo_(2017).svg" alt="" class="os-logo">
+                    </div>
+                    <h3>macOS</h3>
+                    <p>macOS 11 or later, universal<br>VST3, AU and Standalone</p>
+                    <a href="https://github.com/bandpassrecords/synthax1/releases/download/v0.1.0/Synthax1-v0.1.0-macOS.zip" class="btn btn-primary">Download for macOS</a>
+                    <p class="download-note">Copy <strong>Synthax1.vst3</strong> to <strong>~/Library/Audio/Plug-Ins/VST3</strong> and <strong>Synthax1.component</strong> to <strong>~/Library/Audio/Plug-Ins/Components</strong>. Not notarized yet: after the first attempt, open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p>
+                </div>
+
+                <div class="download-card">
+                    <div class="download-icon">
+                        <img src="resources/os/Linux_logo.svg" alt="" class="os-logo">
+                    </div>
+                    <h3>Linux</h3>
+                    <p>64-bit, Ubuntu 22.04 or newer<br>VST3 and Standalone</p>
+                    <a href="https://github.com/bandpassrecords/synthax1/releases/download/v0.1.0/Synthax1-v0.1.0-Linux.zip" class="btn btn-primary">Download for Linux</a>
+                    <p class="download-note">Copy <strong>Synthax1.vst3</strong> to <strong>~/.vst3</strong>.</p>
+                </div>
+            </div>
+
+            <div class="download-info">
+                <p>Version 0.1.0 · <a href="https://github.com/bandpassrecords/synthax1/releases/tag/v0.1.0" target="_blank" rel="noopener noreferrer">Release notes</a> · <a href="https://github.com/bandpassrecords/synthax1" target="_blank" rel="noopener noreferrer">Source code on GitHub</a></p>
+                <p>The source code is MIT licensed; the binaries include JUCE and are distributed under the GNU AGPLv3.</p>
             </div>
         </div>
     </section>
